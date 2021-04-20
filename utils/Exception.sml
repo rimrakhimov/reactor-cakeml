@@ -10,7 +10,7 @@ struct
      *  Exception to be raised by printer functions 
      *  if exception does is not handled by the printer
      *)
-    exception UnknownException
+    exception Unknown
 
     local
         fun exn_printer_base exn = 
@@ -28,10 +28,10 @@ struct
               | TextIO.IllegalArgument => "TextIO.IllegalArgument"
             
               (*    Raise if exception is unknown    *)
-              | _ => raise UnknownException
+              | _ => raise Unknown
     in
         val (exn_name_printers : exn_printer list ref) = Ref [exn_printer_base]
-        
+
         val (exn_message_printers : exn_printer list ref) = Ref [exn_printer_base]
     end
 
@@ -46,7 +46,7 @@ struct
                 case printers_list of
                     [] => "Unknown exception"
                   | (printer::others) =>
-                        printer exn handle UnknownException => printer_search exn others
+                        printer exn handle Unknown => printer_search exn others
     in
         fun exn_name exn = printer_search exn (!exn_name_printers)
 
