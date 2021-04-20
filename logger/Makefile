@@ -22,21 +22,24 @@ CC = gcc
 # CFLAGS =
 
 
-SRC_LIST = LoggerLevel.sml Logger.sml LoggerInitializers.sml
+SRC_LIST = src/LoggerLevel.sml src/Logger.sml src/LoggerInitializers.sml
 
 .PHONY: all
 all: Logger.cake
 
-basis_ffi.o: $(BASIS)
-	$(CC) $(CFLAGS) -c $(BASIS)
-
-Logger.cake.S: $(SRC_LIST)
-	$(CAKEC) < $^ > Logger.cake.S
-
 Logger.cake: Logger.cake.S basis_ffi.o
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $^
 
-clean: 
-	$(RM) Logger.cake Logger.cake.S basis_ffi.o
+Logger.cake.S: Logger.cake.sml
+	$(CAKEC) < $^ > Logger.cake.S
 
-.INTERMEDIATE: Logger.cake.S basis_ffi.o
+Logger.cake.sml: $(SRC_LIST)
+	cat $^ > $@
+
+basis_ffi.o: $(BASIS)
+	$(CC) $(CFLAGS) -c $(BASIS)
+
+clean: 
+	$(RM) Logger.cake Logger.cake.S Logger.cake.sml basis_ffi.o
+
+.INTERMEDIATE: Logger.cake.S Logger.cake.sml basis_ffi.o
