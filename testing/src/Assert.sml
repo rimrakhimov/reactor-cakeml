@@ -441,4 +441,14 @@ structure Assert =
 
     val assertEqualStringList = assertEqualList assertEqualString
 
-  end ;
+  end;
+
+Exception.add_exn_name_printer
+    (fn e => case e of Assert.Fail _ => "Assert.Fail" | _ => raise Exception.Unknown);
+Exception.add_exn_message_printer
+    (fn e =>
+        case e of
+            Assert.Fail (Assert.GeneralFailure msg) => ("Assert.Fail" ^ " " ^ "GeneralFailure" ^ " \"" ^ msg ^ "\"")
+          | Assert.Fail (Assert.NotEqualFailure msg1 msg2) => ("Assert.Fail" ^ " " ^ "NotEqualFailure" ^ " \"" ^ msg1 ^ "\"" ^ " \"" ^ msg2 ^ "\"")
+          | _ => raise Exception.Unknown
+    );

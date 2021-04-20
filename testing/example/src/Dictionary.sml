@@ -76,8 +76,8 @@ structure Dictionary =
   end ;
 
 local
-    fun dict_not_found_printer exn =
-        case exn of
+    fun dict_not_found_printer e =
+        case e of
             Dictionary.NotFound => "Dictionary.NotFound"
           | _ => raise Exception.Unknown
 in
