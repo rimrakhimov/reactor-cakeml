@@ -20,10 +20,9 @@ exception IOBufferLowWatermarkTooHigh int int
  *   than the buffer contains.
  *
  *  @param size `int`: current number of bytes available to read
- *  @param offset `int`: the offset from which data tried to be read
  *  @param n `int`: number of bytes tried to be read
  *)
-exception IOBufferNotEnoughData int int int
+exception IOBufferNotEnoughData int int
 
 structure IOBufferType =
 struct
@@ -105,28 +104,6 @@ struct
                 (IOBufferType.get_wr_offset_ref iob) := dirty_size
             end
 
-    (*  Read \a n bytes starting from the \offset bytes.
-     *
-     *  @param offset is the number of bytes to be skipped before 
-     *      first byte to be read.
-     *  @param n is the number of bytes to be read.
-     *
-     *  @returns n bytes of data that has been read from the rd_offset plus 
-     *      \a offset as a string.
-     *  @raises IOBufferNotEnoughData if there is not enough data
-     *      in the buffer to read \a n bytes starting from \a offset.
-     *)
-    fun read_from iob (offset : int) (n : int) = 
-        if n > (size iob) - offset
-        then raise IOBufferNotEnoughData (size iob) offset n
-        else
-            let
-                val rd_offset = IOBufferType.get_rd_offset_val iob
-                val buffer = IOBufferType.get_buffer_val iob
-            in
-                Word8Array.substring buffer (rd_offset + offset) n
-            end
-
     (*  Read \a n bytes from the buffer.
      *
      *  @param n is the number of bytes to read.
@@ -136,7 +113,16 @@ struct
      *  @raises IOBufferNotEnoughData if there is not enough data 
      *      in the buffer to read \a n bytes.
      *)
-    fun read iob (n : int) = read_from iob 0 n
+    fun read iob (n : int) =
+        if n > size iob
+        then raise IOBufferNotEnoughData (size iob) n
+        else
+            let
+                val rd_offset = IOBufferType.get_rd_offset_val iob
+                val buffer = IOBufferType.get_buffer_val iob
+            in
+                Word8Array.substring buffer rd_offset n
+            end
 
     (*  Move any unread data to the beginning of the buffer.
      *  This function is similar to reset(), however, no unread
@@ -166,7 +152,7 @@ struct
      *)
     fun consume iob (n : int) =
         if n > size iob
-        then raise IOBufferNotEnoughData (size iob) 0 n
+        then raise IOBufferNotEnoughData (size iob) n
         else
             let
                 val rd_offset = IOBufferType.get_rd_offset_val iob
@@ -212,7 +198,7 @@ val _ =
         (fn e => 
             case e of 
                 IOBufferLowWatermarkTooHigh _ _ => "IOBufferLowWatermarkTooHigh"
-              | IOBufferNotEnoughData _ _ _ => "IOBufferNotEnoughData"
+              | IOBufferNotEnoughData _ _ => "IOBufferNotEnoughData"
               | _ => raise Exception.Unknown
         )
 val _ = 
@@ -221,7 +207,7 @@ val _ =
             case e of
                 IOBufferLowWatermarkTooHigh v1 v2 => 
                     "IOBufferLowWatermarkTooHigh" ^ " " ^ Int.toString v1 ^ " " ^ Int.toString v2
-              | IOBufferNotEnoughData v1 v2 v3 => 
-                    "IOBufferNotEnoughData" ^ " " ^ Int.toString v1 ^ " " ^ Int.toString v2 ^ " " ^ Int.toString v3
+              | IOBufferNotEnoughData v1 v2 => 
+                    "IOBufferNotEnoughData" ^ " " ^ Int.toString v1 ^ " " ^ Int.toString v2
               | _ => raise Exception.Unknown
         )

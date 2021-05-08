@@ -199,7 +199,7 @@ struct
             val _ = IOBuffer.write iob (ByteArray.from_string "hello")
         in
             (IOBuffer.read iob 6; Assert.fail "not enough data to read must fail")
-            handle IOBufferNotEnoughData 5 0 6 => ()
+            handle IOBufferNotEnoughData 5 6 => ()
         end
 
     fun test_consume_not_enough_throws () =
@@ -208,7 +208,7 @@ struct
             val _ = IOBuffer.write iob (ByteArray.from_string "hello")
         in
             (IOBuffer.consume iob 6; Assert.fail "not enough data to consume must fail")
-            handle IOBufferNotEnoughData 5 0 6 => ()
+            handle IOBufferNotEnoughData 5 6 => ()
         end
 
     fun test_consume_and_crunch_not_enough_throws () =
@@ -217,7 +217,7 @@ struct
             val _ = IOBuffer.write iob (ByteArray.from_string "hello")
         in
             (IOBuffer.consume_and_crunch iob 6; Assert.fail "not enough data to consume must fail")
-            handle IOBufferNotEnoughData 5 0 6 => ()
+            handle IOBufferNotEnoughData 5 6 => ()
         end
 
     (****************************************)        
