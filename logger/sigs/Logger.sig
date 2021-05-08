@@ -3,8 +3,8 @@ sig
     datatype level = Trace | Debug | Info | Warn | Error | Critical | Off
     type logger
 
-    val create : TextIO.outstream * level -> logger
-    val set_level : logger * level -> logger
+    val create : TextIO.outstream -> level -> logger
+    val set_level : logger -> level -> logger
     val level : logger -> level
 
     val trace : logger -> string -> unit
