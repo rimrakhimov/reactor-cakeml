@@ -54,4 +54,4 @@ struct
           | (Critical, Critical) => True
           | (Off, Off) => True
           | _ => False
-end ;
+end

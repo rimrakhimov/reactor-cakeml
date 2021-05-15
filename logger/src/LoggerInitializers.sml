@@ -5,7 +5,7 @@ structure StdOutLogger =
 struct
     fun init (lvl : LoggerLevel.level) =
         Logger.create TextIO.stdOut lvl
-end ;
+end
 
 (**
  *  Structure defines a logger that outputs logs into a file.
@@ -80,4 +80,4 @@ struct
         in
             TextIO.closeOut outstream
         end
-end ;
+end

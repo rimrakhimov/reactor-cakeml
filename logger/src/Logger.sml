@@ -4,7 +4,7 @@
  *  @param log_lvl `LoggerLevel.level`: the minimal level of messages that should be logged.
         If a message has a lower level it will be ignored.
  *)
-datatype logger = Logger TextIO.outstream LoggerLevel.level;
+datatype logger = Logger TextIO.outstream LoggerLevel.level
 
 (**
  *  Structure defines getters and setters for variables of internal logger representation.
@@ -22,7 +22,7 @@ struct
         Logger outstream log_lvl
     fun set_log_lvl (Logger outstream _) log_lvl = 
         Logger outstream log_lvl
-end ;
+end 
 
 (**
  *  Structure defines functions to be used with logger to save logs.
@@ -80,4 +80,4 @@ struct
         fun critical logger (msg : string) =
             log logger LoggerLevel.Critical (prepare_log LoggerLevel.Critical msg)
     end
-end ;
+end 
