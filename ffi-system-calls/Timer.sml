@@ -11,13 +11,10 @@ struct
         let
             val inbuf = ByteArray.empty 0
             val outbuf = ByteArray.empty (1 + 4)
-
-            val _ = #(timer_create) (ByteArray.to_string inbuf) outbuf
-            val status = Word8.toInt (Word8Array.sub outbuf 0)
         in
-            if status = FFICodes.success 
-            then MarshallingHelp.w42n outbuf 1
-            else raise FFIFailure
+            #(timer_create) (ByteArray.to_string inbuf) outbuf;
+            FFIHelper.validate_status outbuf;
+            MarshallingHelp.w42n outbuf 1
         end
     
     (**
@@ -40,12 +37,9 @@ struct
 
             val inbuf = ByteArray.concat_all [fd_bytes, initial_bytes, period_bytes]
             val outbuf = ByteArray.empty 1
-
-            val _ = #(timer_set_time) (ByteArray.to_string inbuf) outbuf
-            val status = Word8.toInt (Word8Array.sub outbuf 0)
         in
-            if status <> FFICodes.success
-            then raise FFIFailure
-            else ()
+            #(timer_set_time) (ByteArray.to_string inbuf) outbuf;
+            FFIHelper.validate_status outbuf;
+            ()
         end
 end
