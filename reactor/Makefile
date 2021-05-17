@@ -24,7 +24,7 @@ CC = gcc
 ROOT_PATH = ..
 
 UTILS_PATH = $(ROOT_PATH)/utils
-UTILS_LIST = $(UTILS_PATH)/Exception.sml $(UTILS_PATH)/NetworkAddress.sml
+UTILS_LIST = $(UTILS_PATH)/Exception.sml $(UTILS_PATH)/ByteArray.sml $(UTILS_PATH)/NetworkAddress.sml
 
 BUFFER_PATH = $(ROOT_PATH)/buffer
 BUFFER_LIST = $(BUFFER_PATH)/src/IOBuffer.sml
@@ -32,24 +32,46 @@ BUFFER_LIST = $(BUFFER_PATH)/src/IOBuffer.sml
 LOGGER_PATH = $(ROOT_PATH)/logger
 LOGGER_LIST = $(LOGGER_PATH)/src/LoggerLevel.sml $(LOGGER_PATH)/src/Logger.sml
 
+FFI_SYSTEM_CALLS_PATH = $(ROOT_PATH)/ffi-system-calls
+FFI_SYSTEM_CALLS_LIST = $(FFI_SYSTEM_CALLS_PATH)/MarshallingHelp.sml \
+							$(FFI_SYSTEM_CALLS_PATH)/FFICommon.sml \
+							$(FFI_SYSTEM_CALLS_PATH)/Errno.sml \
+							$(FFI_SYSTEM_CALLS_PATH)/Fd.sml \
+							$(FFI_SYSTEM_CALLS_PATH)/Epoll.sml \
+							$(FFI_SYSTEM_CALLS_PATH)/Timer.sml
+
 SRC_LIST = src/EventHandlers.sml src/FDInfo.sml src/Reactor.sml
 
 .PHONY: all
 all: Reactor.cake
 
+timer_ffi.o: $(FFI_SYSTEM_CALLS_PATH)/ffi/timer.c
+	$(CC) $(CFLAGS) -o $@ -c $^
+
+epoll_ffi.o: $(FFI_SYSTEM_CALLS_PATH)/ffi/epoll.c
+	$(CC) $(CFLAGS) -o $@ -c $^
+
+fd_ffi.o: $(FFI_SYSTEM_CALLS_PATH)/ffi/fd.c
+	$(CC) $(CFLAGS) -o $@ -c $^
+
+errno_ffi.o: $(FFI_SYSTEM_CALLS_PATH)/ffi/errno.c
+	$(CC) $(CFLAGS) -o $@ -c $^
+
 basis_ffi.o: $(BASIS)
 	$(CC) $(CFLAGS) -c $(BASIS)
 
-Reactor.cake: Reactor.cake.S basis_ffi.o
+Reactor.cake: Reactor.cake.S basis_ffi.o errno_ffi.o fd_ffi.o epoll_ffi.o timer_ffi.o
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $^
 
 Reactor.cake.S: Reactor.cake.sml
 	$(CAKEC) < $^ > Reactor.cake.S
 
-Reactor.cake.sml: $(UTILS_LIST) $(BUFFER_LIST) $(LOGGER_LIST) $(SRC_LIST)
+Reactor.cake.sml: $(UTILS_LIST) $(BUFFER_LIST) $(LOGGER_LIST) $(FFI_SYSTEM_CALLS_LIST) $(SRC_LIST)
 	cat $^ > $@
 
 clean: 
-	$(RM) Reactor.cake Reactor.cake.S Reactor.cake.sml basis_ffi.o
+	$(RM) Reactor.cake Reactor.cake.S Reactor.cake.sml basis_ffi.o \
+		errno_ffi.o fd_ffi.o epoll_ffi.o timer_ffi.o
 
-.INTERMEDIATE: Reactor.cake.S Reactor.cake.sml basis_ffi.o
+.INTERMEDIATE: Reactor.cake.S Reactor.cake.sml basis_ffi.o \
+		errno_ffi.o fd_ffi.o epoll_ffi.o timer_ffi.o
