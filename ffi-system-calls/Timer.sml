@@ -49,7 +49,3 @@ struct
             else ()
         end
 end
-
-val fd = Timer.create ()
-val _ = print ("\n===TIMER_FD=" ^ Int.toString fd ^ "===\n")
-val _ = Timer.set_time fd 1234567 1234567
