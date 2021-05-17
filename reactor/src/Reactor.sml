@@ -1,15 +1,15 @@
 (**
  *  The type defines internal representation of the reactor.
  *
- *  @param state `'a`: a parametric value that represents a client application state.
+ *  @param state_ref `'a ref`: a parametric value that keeps a reference
+ *      to a client application state.
  *  @param logger `logger`.
  *  @param poll_fd `int`: the file descriptor corresponding to the epoll mechanism.
- *  @param fds `(int, ('a reactor) fd_info) map`: a map from file descriptors to
- *      corresponding fd_info structures.
- *  @param saved_opt_ref `('a reactor option) ref`: a reference where reactor
- *      should be saved by (is used for exiting and errors handling purposes).
+ *  @param fds_ref `(int, ('a reactor) fd_info) map ref`: a reference to a map from 
+ *      file descriptors to corresponding fd_info structures. Reference is used
+ *      in order to keep the reactor consistent with epoll mechanism. 
  *)
-datatype 'a reactor = Reactor 'a logger int ((int, ('a reactor) fd_info) map) (('a reactor option) ref)
+datatype 'a reactor = Reactor ('a ref) logger int ((int, ('a reactor) fd_info) map ref)
 
 (**
  *  Is raised to stop the reactor and exit from the run function.
@@ -28,42 +28,42 @@ exception ReactorSystemError
  *)
 structure ReactorType =
 struct
-    fun get_state (Reactor state _ _ _ _) = state
-    fun get_logger (Reactor _ logger _ _ _) = logger
-    fun get_epoll_fd (Reactor _ _ epoll_fd _ _) = epoll_fd
-    fun get_fds (Reactor _ _ _ fds _) = fds
-    fun get_saved_opt_ref (Reactor _ _ _ _ saved_opt_ref) = saved_opt_ref
+    fun get_state (Reactor state_ref _ _ _) = (!state_ref)
+    fun get_logger (Reactor _ logger _ _) = logger
+    fun get_epoll_fd (Reactor _ _ epoll_fd _) = epoll_fd
+    fun get_fds (Reactor _ _ _ fds_ref) = (!fds_ref)
 
-    fun set_state (Reactor _ logger epoll_fd fds saved_opt_ref) state = 
-        Reactor state logger epoll_fd fds saved_opt_ref
-    fun set_logger (Reactor state _ epoll_fd fds saved_opt_ref) logger = 
-        Reactor state logger epoll_fd fds saved_opt_ref
-    fun set_epoll_fd (Reactor state logger _ fds saved_opt_ref) epoll_fd =
-        Reactor state logger epoll_fd fds saved_opt_ref
-    fun set_fds (Reactor state logger epoll_fd _ saved_opt_ref) fds =
-        Reactor state logger epoll_fd fds saved_opt_ref
-
-    (* Saves a reactor by the reference. *)
-    fun save reactor = 
-        get_saved_opt_ref reactor := Some reactor
-    (* Removes a reactor from the reference. *)
-    fun waste reactor = 
-        get_saved_opt_ref reactor := None
+    fun set_state (Reactor state_ref _ _ _) state = 
+        state_ref := state
+    fun set_logger (Reactor state_ref _ epoll_fd fds_ref) logger = 
+        Reactor state_ref logger epoll_fd fds_ref
+    fun set_epoll_fd (Reactor state_ref logger _ fds_ref) epoll_fd =
+        Reactor state_ref logger epoll_fd fds_ref
+    fun set_fds (Reactor _ _ _ fds_ref) fds =
+        fds_ref := fds
 
     (* Returns fd info if specified descriptor exists in the reactor. *)
     fun get_fd_info_opt reactor fd =
         Map.lookup (get_fds reactor) fd
-    
+
     (* Returns whether specified descriptor exists in the reactor. *)
     fun has_fd_info reactor fd =
         Option.isSome (get_fd_info_opt reactor fd)
+
+    (* Adds a new fd_info into the reactor. *)
+    fun add_fd_info reactor fd_info =
+        let
+            val fd = FdInfoType.get_fd fd_info
+        in
+            set_fds reactor (Map.insert (get_fds reactor) fd fd_info)
+        end
 end
 
 structure ReactorPrivate =
 struct
     (* Initializes the reactor. *)
     fun init state logger epoll_fd =
-        Reactor state logger epoll_fd (Map.empty Int.compare) (Ref None)
+        Reactor (Ref state) logger epoll_fd (Ref (Map.empty Int.compare))
 
     (*
      *  Closes a specified file descriptor. If closing retunrs an error,
