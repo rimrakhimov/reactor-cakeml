@@ -6,7 +6,7 @@
 
 void ffiepoll_create(unsigned char *c, long clen, unsigned char *a, long alen)
 {
-    assert(4 <= alen);
+    assert(5 <= alen);
     int fd = epoll_create1(0);
     if (0 <= fd)
     {
