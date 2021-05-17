@@ -2,6 +2,7 @@
 #define MARSHALLING_H
 
 void int_to_byte8(int i, unsigned char *b);
+int byte8_to_int(unsigned char *b);
 
 static inline void int_to_byte4(int i, unsigned char *b)
 {
@@ -12,7 +13,8 @@ static inline void int_to_byte4(int i, unsigned char *b)
     b[3] = i & 0xFF;
 }
 
-static inline int byte4_to_int(unsigned char *b){
+static inline int byte4_to_int(unsigned char *b)
+{
     return ((b[0] << 24) | (b[1] << 16) | (b[2] << 8) | b[3]);
 }
 
