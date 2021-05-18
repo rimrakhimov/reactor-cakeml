@@ -5,7 +5,7 @@ struct
      *
      *  @param fd `int`: fd to be closed.
      *
-     *  @raises FFIFailure if `close` syscall fails. 
+     *  @raises `FFIFailure` if `close` syscall fails. 
      *)
     fun close fd =
         let

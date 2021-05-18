@@ -138,7 +138,7 @@ struct
      *  @param state: a state that the reactor will return into callback functions.
      *  @param logger `logger`: a logger that will be used to journal errors.
      *
-     *  @raises ReactorSystemError if epoll initialization returns an error.
+     *  @raises `ReactorSystemError` if epoll initialization returns an error.
      *)
     fun init state logger =
         let
@@ -171,7 +171,7 @@ struct
      *
      *  @returns `(int * 'a reactor)`: a timer fd created, and an updated reactor.
      *
-     *  @raises ReactorSystemError if timer creation, timer setting, or addtion
+     *  @raises `ReactorSystemError` if timer creation, timer setting, or addtion
      *      into the epoll mechanism return an error.
      *)
     fun add_timer reactor (name : string) (initial_mcsec : int) (period_mcsec : int)

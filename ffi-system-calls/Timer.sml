@@ -5,7 +5,7 @@ struct
      *
      *  @returns `int`: a file descriptor of the created timer.
      *
-     *  @raises FFIFailure if `timerfd_create` syscall fails.
+     *  @raises `FFIFailure` if `timerfd_create` syscall fails.
      *)
     fun create () =
         let
@@ -27,7 +27,7 @@ struct
      *  @param period `int`: a period of time in microseconds
      *      that the timer fires periodically after the first expiration.
      *
-     *  @raises FFIFailure if `timerfd_settime` syscall fails.
+     *  @raises `FFIFailure` if `timerfd_settime` syscall fails.
      *)
     fun set_time (fd : int) (initial : int) (period : int) =
         let
