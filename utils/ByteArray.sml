@@ -17,6 +17,9 @@ struct
 
     fun to_string (src : byte_array) =
 		Word8Array.substring src 0 (Word8Array.length src)
+	
+	fun subarray (src : byte_array) (offset : int) (length : int) =
+		from_string (Word8Array.substring src offset length)
 
     fun concat array1 array2 =
 		let
