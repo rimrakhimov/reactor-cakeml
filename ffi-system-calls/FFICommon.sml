@@ -8,11 +8,18 @@ exception FFIFailure
  *)
 exception FFIEintr
 
+(**
+ *  Is raised when called by FFI syscall would block 
+ *  on nonblocking descriptor.
+ *)
+exception FFIEagain
+
 structure FFICodes =
 struct
     val success = 0
     val failure = 1
     val eintr = 2
+    val eagain = 3
 end
 
 structure FFIHelper =
@@ -25,6 +32,8 @@ struct
             then raise FFIFailure
             else if status = FFICodes.eintr
             then raise FFIEintr
+            else if status = FFICodes.eagain
+            then raise FFIEagain
             else ()
         end
 end
