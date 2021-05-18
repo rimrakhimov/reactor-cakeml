@@ -86,6 +86,48 @@ struct
              ". Closing finished with an error: " ^
              Errno.strerror (Errno.errno()))
     )
+
+    (**
+     *  Internal function that adds a file descriptor 
+     *  into the reactor's polling mechanism using FFI call to epoll_ctl
+     *  and adds the descriptor's info into reactor's internal structure.
+     *
+     *  @param reactor `'a reactor`: a reactor where a file descriptor should be added.
+     *  @param a_where `string`: a prefix that indicates the public reactor function 
+     *      that initiated the addition.
+     *  @param fd_info `'a reactor fd_info`: an fd_info that corresponds to the
+     *      descriptor to be added.
+     *  @param events_mask `epoll_events_mask`: events the reactor should listen on
+     *      the descriptor to.
+     *
+     *  @raises `ReactorSystemError` if call to `epoll_ctl` fails. In that case the socket
+     *      will not be closed, and the caller function is responsible for the exception
+     *      handling and closing the socket if required.
+     *)
+    fun add_to_epoll reactor (a_where : string) fd_info (events_mask : epoll_events_mask) =
+        let
+            val logger = ReactorType.get_logger reactor
+            val epoll_fd = ReactorType.get_epoll_fd reactor
+
+            val fd = FdInfoType.get_fd fd_info
+        in
+            Epoll.ctl EpollCtlAdd epoll_fd fd events_mask
+            handle FFIFailure => (
+                Logger.error
+                    logger
+                    ("Reactor." ^ a_where ^ ": Adding FD=" ^ Int.toString fd ^ 
+                     ", Name=" ^ FdInfoType.get_name fd_info ^ 
+                     ", HType=" ^ FdInfoType.get_handler_type fd_info ^ ". Failed.");
+                raise ReactorSystemError
+            );
+            Logger.info 
+                logger 
+                ("Reactor." ^ a_where ^ ": Added FD=" ^ Int.toString fd ^ 
+                 ", Name=" ^ FdInfoType.get_name fd_info ^ 
+                 ", HType=" ^ FdInfoType.get_handler_type fd_info ^ ".");
+            
+            ReactorType.add_fd_info reactor fd_info
+        end
 end
 
 structure Reactor =
@@ -129,7 +171,8 @@ struct
      *
      *  @returns `(int * 'a reactor)`: a timer fd created, and an updated reactor.
      *
-     *  @raises ReactorSystemError if timer creation or setting returns an error.
+     *  @raises ReactorSystemError if timer creation, timer setting, or addtion
+     *      into the epoll mechanism return an error.
      *)
     fun add_timer reactor (name : string) (initial_mcsec : int) (period_mcsec : int)
             on_timer on_error =
@@ -141,7 +184,7 @@ struct
                 Logger.error
                     logger
                     ("Reactor.add_timer: create_timer() failed with " ^
-                     Errno.strerror (Errno.errno ()) ^ ". Name=" ^ name ^ ".");
+                     Errno.errno_strerror () ^ ". Name=" ^ name ^ ".");
                 raise ReactorSystemError
             )
             val _ = Logger.info logger 
@@ -152,15 +195,35 @@ struct
                 Logger.error
                     logger
                     ("Reactor.add_timer: set_timer() failed with " ^
-                     (Errno.strerror (Errno.errno())) ^ ". FD=" ^ Int.toString fd ^ ".");
+                     Errno.errno_strerror () ^ ". FD=" ^ Int.toString fd ^ ".");
                 ReactorPrivate.close_fd logger "add_timer" fd;
                 raise ReactorSystemError
             )
+            val _ = Logger.info logger
+                ("Reactor.add_timer: FD=" ^ Int.toString fd ^ ". Timer was set.")
+
+            val fd_info = TimerFdInfo name fd on_timer on_error
+            val events_mask = EpollEventsMask.from_list [Epollet, Epollin]
         in
-            ()
+            ReactorPrivate.add_to_epoll reactor "add_timer" fd_info events_mask
+            handle ReactorSystemError => (
+                (* Addition to the epoll mechanism failed. Close
+                 * the opened descriptor and propagate the exception. 
+                 *)
+                ReactorPrivate.close_fd logger "add_timer" fd;
+                raise ReactorSystemError
+            )
+            fd
         end
+
+
+    (* fun poll reactor (timeout_msec : int) = () *)
 end
+
+fun on_timer s fd = s
+fun on_error s fd = s
 
 val logger = Logger.create TextIO.stdOut LoggerLevel.Info
 val reactor = Reactor.init 2 logger
+val fd = Reactor.add_timer reactor "test" 0 0 on_timer on_error
 (* val _ = print ("\n====" ^ Int.toString (Errno.errno ()) ^ "=====\n") *)
