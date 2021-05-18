@@ -20,4 +20,6 @@ struct
             #(errno_strerror) inbuf outbuf;
             Word8Array.substring outbuf 1 (Word8.toInt (Word8Array.sub outbuf 1))
         end
+
+    fun errno_strerror () = strerror (errno ())
 end

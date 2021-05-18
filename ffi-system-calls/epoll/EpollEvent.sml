@@ -93,6 +93,18 @@ struct
         end
 
     (**
+     *  Initializes a mask which consists of epoll events specified 
+     *  which are in the list.
+     *
+     *  @param event_enums `epoll_event_enum list`: events that
+     *      should be in the mask.
+     *
+     *  @returns `epoll_events_mask`: resultant mask.
+     *)
+    fun from_list (event_enums : epoll_event_enum list) =
+        List.foldl add (empty ()) event_enums
+
+    (**
      *  Represents an epoll events mask as a text value.
      *  Enumerates active events through a comma. If no event is in
      *  the maks, returns "{}".
