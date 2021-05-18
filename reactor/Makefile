@@ -42,7 +42,7 @@ FFI_SYSTEM_CALLS_LIST = $(FFI_SYSTEM_CALLS_PATH)/MarshallingHelp.sml \
 							$(FFI_SYSTEM_CALLS_PATH)/epoll/Epoll.sml \
 							$(FFI_SYSTEM_CALLS_PATH)/Timer.sml
 
-SRC_LIST = src/EventHandlers.sml src/FDInfo.sml src/Reactor.sml
+SRC_LIST = src/IO.sml src/EventHandlers.sml src/FDInfo.sml src/Reactor.sml
 
 .PHONY: all
 all: Reactor.cake
