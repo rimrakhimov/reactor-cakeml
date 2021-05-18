@@ -37,7 +37,9 @@ FFI_SYSTEM_CALLS_LIST = $(FFI_SYSTEM_CALLS_PATH)/MarshallingHelp.sml \
 							$(FFI_SYSTEM_CALLS_PATH)/FFICommon.sml \
 							$(FFI_SYSTEM_CALLS_PATH)/Errno.sml \
 							$(FFI_SYSTEM_CALLS_PATH)/Fd.sml \
-							$(FFI_SYSTEM_CALLS_PATH)/Epoll.sml \
+							$(FFI_SYSTEM_CALLS_PATH)/epoll/EpollOpCode.sml \
+							$(FFI_SYSTEM_CALLS_PATH)/epoll/EpollEvent.sml \
+							$(FFI_SYSTEM_CALLS_PATH)/epoll/Epoll.sml \
 							$(FFI_SYSTEM_CALLS_PATH)/Timer.sml
 
 SRC_LIST = src/EventHandlers.sml src/FDInfo.sml src/Reactor.sml

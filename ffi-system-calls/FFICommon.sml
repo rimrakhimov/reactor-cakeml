@@ -3,10 +3,16 @@
  *)
 exception FFIFailure
 
+(**
+ *  Is raised when called by FFI syscall is interrupted by a signal.
+ *)
+exception FFIEintr
+
 structure FFICodes =
 struct
     val success = 0
     val failure = 1
+    val eintr = 2
 end
 
 structure FFIHelper =
@@ -17,6 +23,8 @@ struct
         in
             if status = FFICodes.failure
             then raise FFIFailure
+            else if status = FFICodes.eintr
+            then raise FFIEintr
             else ()
         end
 end

@@ -51,5 +51,32 @@ struct
         in
             out
         end
+
+    (**
+     *  Deserializes a byte array into the list of some elements.
+     *
+     *  @param f `byte_array -> int -> ('a * int)` - a function to deserialize
+     *      a single element of the array. Returns an elemnts itself, and
+     *      amount of bytes that has been wasted during deserialization.
+     *  @param n `int`: number of elements to be deserialized.
+     *  @param bytes `byte_array`: bytes to be deserialized.
+     *  @param i `int`: index where bytes should be deserialized from.
+     *)
+    fun bytes_to_list f n bytes i =
+        let
+            fun internal k offset res =
+                if 
+                    k <= 0
+                then 
+                    res
+                else
+                    let
+                        val (v, r) = f bytes offset
+                    in
+                        internal (k-1) (offset + r) (v::res)
+                    end
+        in
+            List.rev (internal n i [])
+        end
 end
 

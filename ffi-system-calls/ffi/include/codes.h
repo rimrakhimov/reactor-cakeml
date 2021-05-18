@@ -3,5 +3,6 @@
 
 #define FFI_SUCCESS    0
 #define FFI_FAILURE    1
+#define FFI_EINTR      2
 
 #endif
