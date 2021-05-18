@@ -13,20 +13,17 @@
  *  @param fd `int`: file descriptor where event occured at.
  *  @param data `string`: data that was read from the descriptor.
  *
- *  @returns number of bytes that has been used from the incoming data,
- *      a new reactor state.
+ *  @returns number of bytes that has been used from the incoming data.
  *)
-type 'a read_handler = ('a -> int -> string -> (int * 'a))
+type 'a read_handler = ('a -> int -> string -> int)
 
 (**
  *  An event handler that is called when a socket is connected.
  *
  *  @param reactor `'b reactor`: current reactor state.
  *  @param fd `int`: file descriptor where event occured at.
- *
- *  @returns a new reactor state.
  *)
-type 'a connect_handler = ('a -> int -> 'a)
+type 'a connect_handler = ('a -> int -> unit)
 
 (**
  *  An event handler that is called when a listening socket 
@@ -38,17 +35,15 @@ type 'a connect_handler = ('a -> int -> 'a)
  *  @param clint_addr `sockaddr_in`: an address of the connected client 
  *      (IPv4 address and port number).
  *)
-type 'a accept_handler = ('a -> int -> int -> sockaddr_in -> 'a)
+type 'a accept_handler = ('a -> int -> int -> sockaddr_in -> unit)
 
 (**
  *  An event handler that is called when a timer fires.
  *
  *  @param reactor `'b reactor`: current reactor state.
  *  @param fd `int`: file descriptor where event occured at.
- *
- *  @returns a new reactor state.
  *)
-type 'a timer_handler = ('a -> int -> 'a)
+type 'a timer_handler = ('a -> int -> unit)
 
 (**
  *  An event handler that is called if any error occured 
@@ -56,7 +51,5 @@ type 'a timer_handler = ('a -> int -> 'a)
  *
  *  @param reactor `'b reactor`: current reactor state.
  *  @param fd `int`: file descriptor where error occured at.
- *
- *  @returns a new reactor state.
  *)
-type 'a err_handler = ('a -> int -> 'a)
+type 'a err_handler = ('a -> int -> unit)

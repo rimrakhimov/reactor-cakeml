@@ -220,8 +220,8 @@ struct
     (* fun poll reactor (timeout_msec : int) = () *)
 end
 
-fun on_timer s fd = s
-fun on_error s fd = s
+fun on_timer s fd = ()
+fun on_error s fd = ()
 
 val logger = Logger.create TextIO.stdOut LoggerLevel.Info
 val reactor = Reactor.init 2 logger
