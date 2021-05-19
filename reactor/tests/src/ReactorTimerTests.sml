@@ -111,49 +111,50 @@ struct
 
     (*****************************************************************************************)
 
-    (* fun test_timer_fires_after_setting () =
+    fun test_timer_fires_after_setting () =
         let
-            val initial = 4000000
-        
-            val (was_set : bool ref) = Ref False
-            val (was_set_at : int ref) = Ref 0
-            val (was_fired_at : int ref) = Ref 0
+            val initial = 2000000
 
+            (* Keeps track of timestamps when the timer was set and when it was expired. *)
+            val state = (~1, ~1)
+
+            val logger = StdOutLogger.init LoggerLevel.Off
             fun on_error reactor fd =
                 Assert.fail "Error occured"
             fun on_timer reactor fd n_exp =
-                if 
-                    not (!was_set)
-                then (
-                    was_set := True;
-                    was_set_at := Time.current_mcsec ();
-                    Reactor.set_timer reactor fd initial 0
-                ) else (
-                    was_fired_at := Time.current_mcsec ();
-                    Reactor.exit_run reactor
-                )
+                let
+                    val was_set_at = fst (Reactor.get_state reactor)
+                in
+                    if was_set_at < 0
+                    then (
+                        Reactor.set_timer reactor fd initial 0;
+                        Reactor.set_state reactor (Time.current_mcsec (), ~1)
+                    )
+                    else (
+                        Reactor.set_state reactor (was_set_at, Time.current_mcsec ());
+                        Reactor.exit_run reactor
+                    )
+                end
 
-            val logger = StdOutLogger.init LoggerLevel.Off
-            val r = Reactor.create 2 logger
-
+            val r = Reactor.init state logger
             val _ = Reactor.add_timer r "timer" 100 100 on_timer on_error
+            val _ = Reactor.run r
 
-            val _ = Reactor.run r'
-
-            val diff = (!was_fired_at) - (!was_set_at)
+            val (was_set_at, was_fired_at) = Reactor.get_state r
+            val diff = was_fired_at - was_set_at
         in
             Assert.assert 
                 ("Timer has been fired after invalid period of time. " ^ 
-                 "Was set at: " ^ Int.toString (!was_set_at) ^ 
-                 ", was fired at: " ^ Int.toString (!was_fired_at) ^
+                 "Was set at: " ^ Int.toString was_set_at ^ 
+                 ", was fired at: " ^ Int.toString was_fired_at ^
                  ". The absolute difference with expected: " ^ Int.toString (abs_diff diff initial))
                 (abs_diff diff initial < eps)
-        end *)
+        end
 
-    (* fun test_timer_fires_after_specified_period_after_setting () =
-       let
-        val initial = 2000000
-        val period = 5000000
+    fun test_timer_fires_after_specified_period_after_setting () =
+        let
+            val initial = 500000
+            val period = 1500000
         
         val (was_fired_once : bool ref) = Ref False
         val (was_set : bool ref) = Ref False
@@ -161,43 +162,48 @@ struct
         val (was_set_at : int ref) = Ref 0
         val (was_fired_at : int ref) = Ref 0
 
-               fun on_error reactor fd err_code msg =
-                       Assert.fail "Error occured"
-               fun on_timer reactor fd =
-            if 
-                not (!was_set)
-            then (
-                was_set := True;
-                was_set_at := Time.current ();
-                Reactor.set_timer reactor fd initial period
-            ) else (
-                if
-                    (!was_fired_once)
-                then (
-                    was_fired_at := Time.current ();
-                    Reactor.exit_run reactor
-                ) else (
-                    was_fired_once := True;
-                    reactor
-                )
-            )
+            (* Keeps track of whether the timer was set, and a pair of
+             * timestamps when the timer has been expired the first time
+             * and when it epxired the second time after setting. *)
+            val state = (False, (~1, ~1))
 
-               val logger = StdOutLogger.init LoggerLevel.Off
-               val r = Reactor.create 2 logger
+            val logger = StdOutLogger.init LoggerLevel.Off
+            fun on_error reactor fd =
+                Assert.fail "Error occured"
+            fun on_timer reactor fd n_exp =
+                let
+                    val (was_set, (was_first_fired_at, was_second_fired_at)) =
+                        Reactor.get_state reactor
+                in
+                    if not was_set
+                    then (
+                        Reactor.set_state reactor (True, (~1, ~1));
+                        Reactor.set_timer reactor fd initial period
+                    ) else (
+                        if was_first_fired_at < 0
+                        then Reactor.set_state reactor (True, (Time.current_mcsec (), ~1))
+                        else (
+                            Reactor.set_state reactor (True, (was_first_fired_at, Time.current_mcsec ()));
+                            Reactor.exit_run reactor
+                        )
+                    )
+                end
 
-               val (_, r') = Reactor.add_timer r "timer" 100 100 on_timer on_error
-               
-               val final_r = Reactor.run r'
-
-        val diff = (!was_fired_at) - (!was_set_at)
-       in
-               Assert.assert 
-            ("Timer has been fired after invalid period of time. " ^ 
-             "Was set at: " ^ Int.toString (!was_set_at) ^ 
-             ", was fired at: " ^ Int.toString (!was_fired_at) ^
-             ". The absolute difference with expected: " ^ Int.toString (abs_diff diff (initial + period)))
-            (abs_diff diff (initial + period) < eps)
-       end *)
+            val r = Reactor.init state logger
+            val _ = Reactor.add_timer r "timer" 100 100 on_timer on_error
+            val _ = Reactor.run r
+            
+            val (_, (was_first_fired_at, was_second_fired_at)) = 
+                Reactor.get_state r
+            val diff = was_second_fired_at - was_first_fired_at
+        in
+            Assert.assert 
+                ("Timer has been fired after invalid period of time. " ^ 
+                 "Was first fired at: " ^ Int.toString was_first_fired_at ^ 
+                 ", was second fired at: " ^ Int.toString was_second_fired_at ^
+                 ". The absolute difference with expected: " ^ Int.toString (abs_diff diff period))
+                (abs_diff diff period < eps)
+        end
 
     
     (****************************************)        
@@ -208,10 +214,11 @@ struct
         [
             ("test timer fires after creation", test_timer_fires_after_creation),
             ("test timer fires after specified period after creation", test_timer_fires_after_specified_period_after_creation),
-            ("test timer fires more than 32 times", test_timer_fires_128_times)
 
-            (* ("test_timer_fires_after_setting", test_timer_fires_after_setting), *)
-            (* ("test timer fires after specified period after setting", test_timer_fires_after_specified_period_after_setting) *)
+            ("test timer fires more than 32 times", test_timer_fires_128_times),
+
+            ("test_timer_fires_after_setting", test_timer_fires_after_setting),
+            ("test timer fires after specified period after setting", test_timer_fires_after_specified_period_after_setting)
         ]
 end
 
@@ -220,3 +227,4 @@ val _ =
         (TextUITestRunner.Output TextIO.stdOut)
         "ReactorTimerTests"
         (ReactorTimerTests.suite ())
+`
