@@ -26,6 +26,12 @@ exception ReactorExitRun
 exception ReactorSystemError
 
 (**
+ *  Is raised if a client application call some reactor 
+ *  function with improper parameters.
+ *)
+exception ReactorBadArgumentError
+
+(**
  *  Structure defines getters and setters for variables in reactor representation.
  *)
 structure ReactorType =
@@ -410,6 +416,62 @@ struct
                 raise ReactorSystemError
             )
             fd
+        end
+
+    (*
+     *  Arms (starts) or disarms (stops) the timer referred to by 
+     *  the file descriptor included into the reactor.
+     *
+     *  @param reactor `'a reactor`.
+     *  @param fd `int`: a file descriptor refferring to the timer.
+     *  @param initial_mcsec `int`: a period of time in microseconds
+     *      after which the timer will expire the first time.
+     *  @param period_mcsec `int`: a period of time in microseconds
+     *      that timer periodically fires after the first expiration.
+     *
+     *  @raises `ReactorSystemError` if timer setting returns an error.
+     *      Corresponding file descriptor is removed from the reactor
+     *      and closed.
+     *  @raises `ReactorBadArgumentError` if provided file descriptor does
+     *      not belong to the reactor or is not a TimerFdInfo.
+     *)
+    fun set_timer reactor (fd : int) (initial_mcsec : int) (period_mcsec : int) =
+        let
+            val logger = ReactorType.get_logger reactor
+
+            val fd_info = 
+                case ReactorType.get_fd_info_opt reactor fd of
+                    Some fd_info => fd_info
+                  | None => (
+                        Logger.error
+                            logger
+                            ("Reactor.set_timer: FD=" ^ Int.toString fd ^
+                             ". The descriptor does not belong to the reactor.");
+                        raise ReactorBadArgumentError
+                  )
+        in
+            (* Validate that fd_info indeed belongs to a timer. *)
+            if not (FdInfoType.is_timer fd_info)
+            then (
+                Logger.error
+                    logger
+                    ("Reactor.set_timer: FD=" ^ Int.toString fd ^
+                     ". Corresponding fd_info is not a Timer.");
+                raise ReactorBadArgumentError
+            )
+            else ();
+
+            Timer.set_time fd initial_mcsec period_mcsec
+            handle FFIFailure => 
+                Logger.error
+                    logger
+                    ("Reactor.set_timer: FD=" ^ Int.toString fd ^ ". set_timer() failed.");
+                ReactorPrivate.remove_from_epoll reactor "set_timer" fd;
+                raise ReactorSystemError;
+            
+            Logger.info 
+                logger
+                ("Reactor.set_timer: FD=" ^ Int.toString fd ^ ". Timer was set.")
         end
 
     fun handle_timer reactor fd_info (events_mask : epoll_events_mask) =
