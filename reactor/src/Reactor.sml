@@ -277,11 +277,16 @@ struct
             val errno = Errno.errno ()
             val errno_strerror = Errno.strerror errno
 
+            val err_handler = FdInfoType.get_err_handler fd_info
+
             val to_log = "Reactor." ^ a_where ^ ": FD=" ^ Int.toString fd ^
                 ", Name=" ^ name ^ ", errno=" ^ Int.toString errno ^
                 ", desc=" ^ errno_strerror ^ ": " ^ msg ^ "."
         in
             Logger.critical logger to_log;
+            (* Invoke used-defined error handler. *)
+            err_handler reactor fd;
+            (* Terminate the reactor. *)
             clear reactor;
             raise ReactorExitRun
         end
