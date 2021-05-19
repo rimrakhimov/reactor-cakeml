@@ -427,12 +427,99 @@ struct
             end
 
 
-    (* fun poll reactor (timeout_msec : int) = () *)
+    fun poll reactor (timeout_msec : int) = 
+        let
+            fun handle_epoll_event reactor epoll_event =
+                let
+                    val logger = ReactorType.get_logger reactor
+                    
+                    val fd = EpollEvent.fd epoll_event
+                    val events_mask = EpollEvent.events epoll_event
+
+                    val _ = Logger.info logger 
+                        ("Reactor.poll: FD=" ^ Int.toString fd ^
+                         ": " ^ EpollEventsMask.to_string events_mask ^ ".")
+                in
+                    case ReactorType.get_fd_info_opt reactor fd of
+                        None => (
+                            Logger.warn 
+                                logger 
+                                ("Reactor.poll: OldFD=" ^ Int.toString fd ^
+                                 ": No FDInfo, but still got Event=" ^ 
+                                 EpollEventsMask.to_string events_mask ^ ".")
+                        )
+                      | Some fd_info => (
+                            case fd_info of
+                                (TimerFdInfo _ _ _ _) => (
+                                    handle_timer reactor fd_info events_mask;
+                                    if ReactorPrivate.is_error events_mask
+                                    then ()
+                                    else ()
+                                )
+                        )
+                end
+            
+            fun handle_epoll_events reactor epoll_events = 
+                case epoll_events of
+                    [] => ()
+                  | (ev::evs) => (handle_epoll_event ev; handle_epoll_events reactor evs)
+
+            val logger = ReactorType.get_logger reactor
+            val epoll_fd = ReactorType.get_epoll_fd reactor
+            val max_events = List.length (Map.toAscList (ReactorType.get_fds reactor))
+
+            fun wait_and_handle () =
+                Epoll.wait epoll_fd max_events timeout_msec
+                handle 
+                    FFIEintr => (
+                        (*  Avoid false exits if `epoll_wait` is interrupted.   *)
+                        Logger.info logger "Reactor.poll: Interrupt occurred. Start again.";
+                        wait_and_handle ()
+                    )
+                  | FFIFailure => (
+                        (*  This is a critical error which most likely means incorrect logic.
+                         *  For this reason, it is NOT passed to "ErrHandler" and not returned as
+                         *  an error flag: Throw an exception instead
+                         *)
+                        Logger.critical 
+                            logger 
+                            ("Reactor.poll: epoll_wait() failed with " ^
+                             Errno.errno_strerror () ^ ".");
+                        raise ReactorSystemError
+                    )
+            val epoll_events = wait_and_handle ()
+        in
+            Logger.info 
+                logger 
+                ("Rector.poll: epoll_wait() returned with " ^ 
+                 Int.toString (List.length epoll_events) ^ " ready descriptors.");
+            handle_epoll_events epoll_events
+        end
+
+    fun run reactor =
+        let
+            val timeout = ~1
+
+            fun loop () = (
+                poll reactor timeout;
+                loop ()
+            )
+        in
+            if True
+            then 
+                loop ()
+                handle ReactorExitRun => ()
+            else ()
+        end
 end
 
-(* fun on_timer s fd = ()
-fun on_error s fd = ()
+fun on_timer s n fd = print ("\n===ON_TIMER: FD=" ^ Int.toString fd ^ ", N=" ^ Int.toString n ^ "===\n")
+fun on_error s fd = print ("\n===ON_ERROR: FD=" ^ Int.toString fd ^ "===\n")
 
 val logger = Logger.create TextIO.stdOut LoggerLevel.Info
 val reactor = Reactor.init 2 logger
-val fd = Reactor.add_timer reactor "test" 0 0 on_timer on_error *)
+val fd = Reactor.add_timer reactor "test" 2000000 9000000 on_timer on_error
+
+val _ = Reactor.run reactor
+handle exn => (print ("\n===EXCEPTION=" ^ Exception.exn_message exn ^ "===\n"); raise exn)
+
