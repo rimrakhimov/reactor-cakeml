@@ -4,7 +4,7 @@ struct
 
     fun test_timer_fires_after_creation () =
        let
-            val initial = 4000000
+            val initial = 2000000
 
             fun on_error reactor fd =
                 Assert.fail "Error occured"
@@ -36,11 +36,8 @@ struct
 
     fun test_timer_fires_after_specified_period_after_creation () =
         let
-            val initial = 1000000
-            val period = 3000000
-        
-            val (was_fired_once : bool ref) = Ref False
-            val (was_fired_at : int ref) = Ref 0
+            val initial = 500000
+            val period = 1500000
 
             fun on_error reactor fd =
                 Assert.fail "Error occured"
@@ -79,8 +76,38 @@ struct
 
     (*****************************************************************************************)
 
-    (* fun test_timer_fires_128_times () =
-         *)
+    (*
+     *  We have a buffer initiated on `add_timer` to keep maximum 32 expirations.
+     *  Thus, here we would like to ckeck that more than 32 expirations on the same timer
+     *  works properly.
+     *)
+    fun test_timer_fires_128_times () =
+        let
+            val initial = 10000
+            val period = 10000
+
+            val limit = 128
+
+            (* The state keeps track of how many times a timer has been expired. *)
+            val state = 0
+
+            val logger = StdOutLogger.init LoggerLevel.Off
+            fun on_error reactor fd =
+                Assert.fail "Error occurred"
+            fun on_timer reactor fd n_exp =
+                if Reactor.get_state reactor < limit
+                then Reactor.set_state reactor (Reactor.get_state reactor + 1)
+                else Reactor.exit_run reactor
+
+            val r = Reactor.init state logger
+            val _ = Reactor.add_timer r "timer" initial period on_timer on_error
+            val _ = Reactor.run r
+
+            val count = Reactor.get_state r
+        in
+            Assert.assertEqualInt limit count
+        end
+        
 
     (*****************************************************************************************)
 
@@ -180,7 +207,8 @@ struct
         Test.labelTests
         [
             ("test timer fires after creation", test_timer_fires_after_creation),
-            ("test timer fires after specified period after creation", test_timer_fires_after_specified_period_after_creation)
+            ("test timer fires after specified period after creation", test_timer_fires_after_specified_period_after_creation),
+            ("test timer fires more than 32 times", test_timer_fires_128_times)
 
             (* ("test_timer_fires_after_setting", test_timer_fires_after_setting), *)
             (* ("test timer fires after specified period after setting", test_timer_fires_after_specified_period_after_setting) *)
