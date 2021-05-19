@@ -1,8 +1,6 @@
 structure Time =
 struct
     local
-        val time_nsec = Timestamp.current ()
-
         (**
          *  Divide a value on (10^exp) and round the resultant
          *  value using the usual mathematical rounding rules.
@@ -23,27 +21,27 @@ struct
          *
          *  @raises `FFIFailure` if syscall to get timestamp fails.
          *)
-        fun current_nsec () = time_nsec
+        fun current_nsec () = Timestamp.current ()
 
         (**
          *  Returns current timestamp in microseconds.
          *
          *  @raises `FFIFailure` if syscall to get timestamp fails.
          *)
-        fun current_mcsec () = div_and_round time_nsec 3
+        fun current_mcsec () = div_and_round (Timestamp.current ()) 3
 
         (**
          *  Returns current timestamp in milliseconds.
          *
          *  @raises `FFIFailure` if syscall to get timestamp fails.
          *)
-        fun current_msec () = div_and_round time_nsec 6
+        fun current_msec () = div_and_round (Timestamp.current ()) 6
 
         (**
          *  Returns current timestamp in seconds.
          *
          *  @raises `FFIFailure` if syscall to get timestamp fails.
          *)
-        fun current_sec () = div_and_round time_nsec 9
+        fun current_sec () = div_and_round (Timestamp.current ()) 9
     end
 end

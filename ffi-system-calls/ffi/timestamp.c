@@ -20,7 +20,7 @@ void ffiget_timestamp(unsigned char *c, long clen, unsigned char *a, long alen) 
     if (status == 0) {
         a[0] = FFI_SUCCESS;
         uint64_t timestamp_usec = (uint64_t)(tms.tv_sec) * (uint64_t)1000000000 + (uint64_t)(tms.tv_nsec);
-        int_to_byte8(timestamp_usec, &a[1]);
+        int64_to_byte8(timestamp_usec, &a[1]);
     } else {
         a[0] = FFI_FAILURE;
     }
