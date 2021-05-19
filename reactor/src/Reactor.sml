@@ -375,7 +375,13 @@ struct
             val _ = Logger.info logger
                 ("Reactor.add_timer: FD=" ^ Int.toString fd ^ ". Timer was set.")
 
-            val fd_info = TimerFdInfo name fd on_timer on_error
+            (*  We are allowing the buffer to handle 31 expirations without crunching. 
+             *  When a timer epires 31 times, there are only 8 bytes left to read the data,
+             *  and, thus, we cannot detect EAGAIN condition while reading 32nd expiration,
+             *  without crunching the buffer before.
+             *)
+            val buff = IOBuffer.init (8 * 32) 9
+            val fd_info = TimerFdInfo name fd on_timer on_error buff
             val events_mask = EpollEventsMask.from_list [Epollet, Epollin]
         in
             ReactorPrivate.add_to_epoll reactor "add_timer" fd_info events_mask
@@ -400,14 +406,7 @@ struct
                 
                 val fd = FdInfoType.get_fd fd_info
                 val timer_handler = FdInfoType.get_timer_handler fd_info
-
-                (*  According to documentation, timer returns an unsigned 8-byte integer
-                 *  containing the number of expirations that have occurred. 
-                 *  First 8 bytes data is written to, and additional 8 bytes are required
-                 *  in order to call `read` one more time to get EAGAIN as
-                 *  read on timerfd with supplied buffer less than 8 bytes fails with EINVAL.
-                 *)
-                val buff = IOBuffer.init 16 0
+                val buff = FdInfoType.get_rd_buff fd_info
 
                 val n = IO.read_until_eagain fd buff
                     handle
@@ -454,7 +453,7 @@ struct
                         )
                       | Some fd_info => (
                             case fd_info of
-                                (TimerFdInfo _ _ _ _) => (
+                                (TimerFdInfo _ _ _ _ _) => (
                                     handle_timer reactor fd_info events_mask;
                                     if ReactorPrivate.is_error events_mask
                                     then ()

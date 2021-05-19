@@ -78,8 +78,14 @@ datatype 'a fd_info =
      *          to be called back when the timer fires.
      *      @param on_err `'a err_handler`: a concrete event handler
      *          to be called back when any error occurs on the descriptor.
+     *      @param rd_buff `io_buffer`: a buffer where a number of expirations
+     *          is read to. According to documentation, timer returns an 
+     *          unsigned 8-byte integer containing the number of expirations
+     *          that have occurred. If supplied buffer is less than 8 bytes 
+     *          read operation fails with EINVAL. Thus, the buffer size should
+     *          have at least 9 bytes to work properly.
      *)
-  | TimerFdInfo string int ('a timer_handler) ('a err_handler)
+  | TimerFdInfo string int ('a timer_handler) ('a err_handler) io_buffer
 
     (*  AcceptorFdInfo - constructor represents file descriptors that 
      *  corresponds to listening sockets:
@@ -130,7 +136,7 @@ struct
             (ReadDataStreamFdInfo _ _ _ _ _ _ _ _) => "ReadDataStream"
           | (WriteDataStreamFdInfo _ _ _ _ _ _ _) => "WriteDataStream"
           | (ReadWriteDataStreamFdInfo _ _ _ _ _ _ _ _ _) => "ReadWriteDataStream"
-          | (TimerFdInfo _ _ _ _) => "Timer"
+          | (TimerFdInfo _ _ _ _ _) => "Timer"
           | (AcceptorFdInfo _ _ _ _) => "Acceptor"
           | (ReadFileFdInfo _ _ _ _ _) => "ReadFile"
           | (WriteFileFdInfo _ _ _ _) => "WriteFile"
@@ -141,7 +147,7 @@ struct
             (ReadDataStreamFdInfo name _ _ _ _ _ _ _) => name
           | (WriteDataStreamFdInfo name _ _ _ _ _ _) => name
           | (ReadWriteDataStreamFdInfo name _ _ _ _ _ _ _ _) => name
-          | (TimerFdInfo name _ _ _) => name
+          | (TimerFdInfo name _ _ _ _) => name
           | (AcceptorFdInfo name _ _ _) => name
           | (ReadFileFdInfo name _ _ _ _) => name
           | (WriteFileFdInfo name _ _ _) => name
@@ -151,7 +157,7 @@ struct
             (ReadDataStreamFdInfo _ fd _ _ _ _ _ _) => fd
           | (WriteDataStreamFdInfo _ fd _ _ _ _ _) => fd
           | (ReadWriteDataStreamFdInfo _ fd _ _ _ _ _ _ _) => fd
-          | (TimerFdInfo _ fd _ _) => fd
+          | (TimerFdInfo _ fd _ _ _) => fd
           | (AcceptorFdInfo _ fd _ _) => fd
           | (ReadFileFdInfo _ fd _ _ _) => fd
           | (WriteFileFdInfo _ fd _ _) => fd
@@ -161,7 +167,7 @@ struct
             (ReadDataStreamFdInfo _ _ _ _ on_err _ _ _) => on_err
           | (WriteDataStreamFdInfo _ _ _ on_err _ _ _) => on_err
           | (ReadWriteDataStreamFdInfo _ _ _ _ on_err _ _ _ _) => on_err
-          | (TimerFdInfo _ _ _ on_err) => on_err
+          | (TimerFdInfo _ _ _ on_err _) => on_err
           | (AcceptorFdInfo _ _ _ on_err) => on_err
           | (ReadFileFdInfo _ _ _ on_err _) => on_err
           | (WriteFileFdInfo _ _ on_err _) => on_err
@@ -182,7 +188,7 @@ struct
 
     fun get_timer_handler fd_info =
         case fd_info of
-            (TimerFdInfo _ _ on_timer _) => on_timer
+            (TimerFdInfo _ _ on_timer _ _) => on_timer
           | _ => raise InvalidType
 
     fun get_accept_handler fd_info =
@@ -195,6 +201,7 @@ struct
             (ReadDataStreamFdInfo _ _ _ _ _ rd_buff _ _) => rd_buff
           | (ReadWriteDataStreamFdInfo _ _ _ _ _ rd_buff _ _ _) => rd_buff
           | (ReadFileFdInfo _ _ _ _ rd_buff) => rd_buff
+          | (TimerFdInfo _ _ _ _ rd_buff) => rd_buff
           | _ => raise InvalidType
 
     fun get_wr_buff fd_info =
@@ -260,7 +267,7 @@ struct
 
     fun is_timer fd_info = 
         case fd_info of
-            (TimerFdInfo _ _ _ _) => True
+            (TimerFdInfo _ _ _ _ _) => True
           | _ => False
     
     fun is_acceptor fd_info =
