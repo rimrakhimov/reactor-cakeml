@@ -421,12 +421,13 @@ struct
                              *  In this case, we terminate the whole Reactor as well. *)
                             ReactorPrivate.handle_critical_io_error
                                 reactor "handle_timer" fd_info "read() failed with Buffer Overflow"
+                val n_expirations = MarshallingHelp.w82n_little (ByteArray.from_string (IOBuffer.read buff n)) 0
             in
                 Logger.info
                     logger
                     ("Reactor.handle_timer: FD=" ^ Int.toString fd ^
                      ". Read n=" ^ Int.toString n ^ " bytes.");
-                timer_handler reactor fd n
+                timer_handler reactor fd n_expirations
             end
 
 

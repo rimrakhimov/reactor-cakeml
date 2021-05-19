@@ -19,7 +19,7 @@ struct
         let
             fun internal (fd : int) (buff : io_buffer) (n_total : int) =
                 let
-                    val _ = IOBuffer.crunch buff (* Crunch the buffer before using. *)
+                    val _ = IOBuffer.consume_and_crunch buff 0 (* Crunch the buffer before using if required. *)
                     val space = IOBuffer.capacity buff
 
                     val (data, status) = (Fd.read fd space, FFICodes.success)

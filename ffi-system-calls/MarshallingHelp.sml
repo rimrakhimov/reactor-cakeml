@@ -52,6 +52,41 @@ struct
             out
         end
 
+    local
+        fun w82n_internal b0 b1 b2 b3 b4 b5 b6 b7 =
+            256 * (256 * (256 * (256 * (
+                256 * (256 * (256 * w2n b7 + w2n b6) + w2n b5) + w2n b4
+            ) + w2n b3) + w2n b2) + w2n b1) + w2n b0
+    in
+        fun w82n bytes n =
+            let
+                val b7 = Word8Array.sub bytes n
+                val b6 = Word8Array.sub bytes (n + 1)
+                val b5 = Word8Array.sub bytes (n + 2)
+                val b4 = Word8Array.sub bytes (n + 3)
+                val b3 = Word8Array.sub bytes (n + 4)
+                val b2 = Word8Array.sub bytes (n + 5)
+                val b1 = Word8Array.sub bytes (n + 6)
+                val b0 = Word8Array.sub bytes (n + 7)
+            in
+                w82n_internal b0 b1 b2 b3 b4 b5 b6 b7  
+            end
+
+        fun w82n_little bytes n =
+            let
+                val b0 = Word8Array.sub bytes n
+                val b1 = Word8Array.sub bytes (n + 1)
+                val b2 = Word8Array.sub bytes (n + 2)
+                val b3 = Word8Array.sub bytes (n + 3)
+                val b4 = Word8Array.sub bytes (n + 4)
+                val b5 = Word8Array.sub bytes (n + 5)
+                val b6 = Word8Array.sub bytes (n + 6)
+                val b7 = Word8Array.sub bytes (n + 7)
+            in
+                w82n_internal b0 b1 b2 b3 b4 b5 b6 b7
+            end
+    end
+
     (**
      *  Deserializes a byte array into the list of some elements.
      *
