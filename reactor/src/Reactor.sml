@@ -402,8 +402,12 @@ struct
                 val timer_handler = FdInfoType.get_timer_handler fd_info
 
                 (*  According to documentation, timer returns an unsigned 8-byte integer
-                 *  containing the number of expirations that have occurred. *)
-                val buff = IOBuffer.init 8 0
+                 *  containing the number of expirations that have occurred. 
+                 *  First 8 bytes data is written to, and additional 8 bytes are required
+                 *  in order to call `read` one more time to get EAGAIN as
+                 *  read on timerfd with supplied buffer less than 8 bytes fails with EINVAL.
+                 *)
+                val buff = IOBuffer.init 16 0
 
                 val n = IO.read_until_eagain fd buff
                     handle
@@ -462,7 +466,10 @@ struct
             fun handle_epoll_events reactor epoll_events = 
                 case epoll_events of
                     [] => ()
-                  | (ev::evs) => (handle_epoll_event ev; handle_epoll_events reactor evs)
+                  | (ev::evs) => (
+                        handle_epoll_event reactor ev; 
+                        handle_epoll_events reactor evs
+                    )
 
             val logger = ReactorType.get_logger reactor
             val epoll_fd = ReactorType.get_epoll_fd reactor
@@ -493,7 +500,7 @@ struct
                 logger 
                 ("Rector.poll: epoll_wait() returned with " ^ 
                  Int.toString (List.length epoll_events) ^ " ready descriptors.");
-            handle_epoll_events epoll_events
+            handle_epoll_events reactor epoll_events
         end
 
     fun run reactor =
@@ -513,12 +520,12 @@ struct
         end
 end
 
-fun on_timer s n fd = print ("\n===ON_TIMER: FD=" ^ Int.toString fd ^ ", N=" ^ Int.toString n ^ "===\n")
-fun on_error s fd = print ("\n===ON_ERROR: FD=" ^ Int.toString fd ^ "===\n")
+fun on_timer s fd n = print ("\n\n===ON_TIMER: FD=" ^ Int.toString fd ^ ", N=" ^ Int.toString n ^ "===\n\n")
+fun on_error s fd = print ("\n\n===ON_ERROR: FD=" ^ Int.toString fd ^ "===\n\n")
 
 val logger = Logger.create TextIO.stdOut LoggerLevel.Info
 val reactor = Reactor.init 2 logger
-val fd = Reactor.add_timer reactor "test" 2000000 9000000 on_timer on_error
+val fd = Reactor.add_timer reactor "test" 2000000  9000000 on_timer on_error
 
 val _ = Reactor.run reactor
 handle exn => (print ("\n===EXCEPTION=" ^ Exception.exn_message exn ^ "===\n"); raise exn)
