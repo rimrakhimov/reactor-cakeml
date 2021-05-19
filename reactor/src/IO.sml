@@ -55,3 +55,13 @@ struct
             internal fd buff 0
         end
 end
+
+local
+    fun exn_printer e =
+        case e of
+            IOBufferOverflow => "IOBufferOverflow"
+          | _ => raise Exception.Unknown
+in
+    val _ = Exception.add_exn_name_printer exn_printer
+    val _ = Exception.add_exn_message_printer exn_printer
+end

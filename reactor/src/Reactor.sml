@@ -462,13 +462,14 @@ struct
             else ();
 
             Timer.set_time fd initial_mcsec period_mcsec
-            handle FFIFailure => 
+            handle FFIFailure => (
                 Logger.error
                     logger
                     ("Reactor.set_timer: FD=" ^ Int.toString fd ^ ". set_timer() failed.");
                 ReactorPrivate.remove_from_epoll reactor "set_timer" fd;
-                raise ReactorSystemError;
-            
+                raise ReactorSystemError
+            );
+
             Logger.info 
                 logger
                 ("Reactor.set_timer: FD=" ^ Int.toString fd ^ ". Timer was set.")
@@ -622,6 +623,18 @@ struct
         end
 end
 
+local
+    fun exn_printer e =
+        case e of
+            ReactorExitRun => "ReactorExitRun"
+          | ReactorSystemError => "ReactorSystemError"
+          | ReactorBadArgumentError => "ReactorBadArgumentError"
+          | _ => raise Exception.Unknown
+in
+    val _ = Exception.add_exn_name_printer exn_printer
+    val _ = Exception.add_exn_message_printer exn_printer
+end
+
 (* val a = Ref 0
 fun on_timer s fd n = (a := (!a) + 1; print ("\n\n===ON_TIMER: FD=" ^ Int.toString fd ^ ", N=" ^ Int.toString n ^ ", A=" ^ Int.toString (!a) ^ "===\n\n"))
 fun on_error s fd = print ("\n\n===ON_ERROR: FD=" ^ Int.toString fd ^ "===\n\n")
@@ -632,4 +645,3 @@ val fd = Reactor.add_timer reactor "test" 200000 0 on_timer on_error
 
 val _ = Reactor.run reactor
 handle exn => (print ("\n===EXCEPTION=" ^ Exception.exn_message exn ^ "===\n"); raise exn) *)
-
