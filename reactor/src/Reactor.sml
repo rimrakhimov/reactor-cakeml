@@ -330,6 +330,23 @@ struct
      *)
     fun clear reactor = ReactorPrivate.clear reactor
 
+    (**
+     *  Returns current state saved in the reactor.
+     *
+     *  @param reactor `'a reactor`: a reactor where the state is saved in.
+     *
+     *  @returns `'a`: the state.
+     *)
+    fun get_state reactor = ReactorType.get_state reactor
+
+    (**
+     *  Save a new state into the reactor.
+     *
+     *  @param reactor `'a reactor`: a reactor where the state should be saved in.
+     *  @param staet `'a`: the state to be saved.
+     *)
+    fun set_state reactor state = ReactorType.set_state reactor state
+
     (*
      *  Creates a new timer with specified parameters and adds it into the reactor.
      *
@@ -520,6 +537,27 @@ struct
                 handle ReactorExitRun => ()
             else ()
         end
+
+    (**
+     *  Stops the reactor execution. Should be used very carefully,
+     *  as the execution of running loop is stopped, and all uprorcessed
+     *  events on descriptors are lost.
+     *
+     *  In general, should be used a safe version of this function
+     *  `safe_exit_run` that finishes processing of current events,
+     *  and stops the reactor before starting a new `epoll_wait` cycle.
+     *
+     *  @param reactor `'a reactor` a reactor which running loop should be stopped.
+     *
+     *  @raise `ReactorExitRun` that should be catched in the run loop. 
+     *)
+    fun exit_run reactor = 
+        let
+            val logger = ReactorType.get_logger reactor
+        in
+            Logger.info logger "Reactor.exit_run: Reactor is stopping.";
+            raise ReactorExitRun
+        end
 end
 
 (* val a = Ref 0
@@ -528,7 +566,7 @@ fun on_error s fd = print ("\n\n===ON_ERROR: FD=" ^ Int.toString fd ^ "===\n\n")
 
 val logger = Logger.create TextIO.stdOut LoggerLevel.Info
 val reactor = Reactor.init 2 logger
-val fd = Reactor.add_timer reactor "test" 200000 100000 on_timer on_error
+val fd = Reactor.add_timer reactor "test" 200000 0 on_timer on_error
 
 val _ = Reactor.run reactor
 handle exn => (print ("\n===EXCEPTION=" ^ Exception.exn_message exn ^ "===\n"); raise exn) *)
