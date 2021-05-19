@@ -421,7 +421,9 @@ struct
                              *  In this case, we terminate the whole Reactor as well. *)
                             ReactorPrivate.handle_critical_io_error
                                 reactor "handle_timer" fd_info "read() failed with Buffer Overflow"
+                (* Read the number of expirations and clean the buffer. *)
                 val n_expirations = MarshallingHelp.w82n_little (ByteArray.from_string (IOBuffer.read buff n)) 0
+                val _ = IOBuffer.consume_and_crunch buff n
             in
                 Logger.info
                     logger
@@ -520,13 +522,14 @@ struct
         end
 end
 
-fun on_timer s fd n = print ("\n\n===ON_TIMER: FD=" ^ Int.toString fd ^ ", N=" ^ Int.toString n ^ "===\n\n")
+(* val a = Ref 0
+fun on_timer s fd n = (a := (!a) + 1; print ("\n\n===ON_TIMER: FD=" ^ Int.toString fd ^ ", N=" ^ Int.toString n ^ ", A=" ^ Int.toString (!a) ^ "===\n\n"))
 fun on_error s fd = print ("\n\n===ON_ERROR: FD=" ^ Int.toString fd ^ "===\n\n")
 
 val logger = Logger.create TextIO.stdOut LoggerLevel.Info
 val reactor = Reactor.init 2 logger
-val fd = Reactor.add_timer reactor "test" 2000000  9000000 on_timer on_error
+val fd = Reactor.add_timer reactor "test" 200000 100000 on_timer on_error
 
 val _ = Reactor.run reactor
-handle exn => (print ("\n===EXCEPTION=" ^ Exception.exn_message exn ^ "===\n"); raise exn)
+handle exn => (print ("\n===EXCEPTION=" ^ Exception.exn_message exn ^ "===\n"); raise exn) *)
 
