@@ -102,8 +102,8 @@ void ffiepoll_wait(unsigned char *c, long clen, unsigned char *a, long alen) {
         for (int i = 0; i < n; i++) {
             int fd = ev[i].data.fd;
             int events = ev[i].events;
-            int_to_byte4(fd, &a[1 + i * 5]);
-            a[1 + i * 5 + 4] = events_to_ffi_events(events);
+            int_to_byte4(fd, &a[5 + i * 5]);
+            a[5 + i * 5 + 4] = events_to_ffi_events(events);
         }
     } else {
         if (errno == EINTR) {
