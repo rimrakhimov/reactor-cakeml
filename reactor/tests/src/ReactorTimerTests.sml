@@ -5,29 +5,31 @@ struct
     fun test_timer_fires_after_creation () =
        let
             val initial = 4000000
-        
-            val (was_fired_at : int ref) = Ref 0
 
             fun on_error reactor fd =
                 Assert.fail "Error occured"
             fun on_timer reactor fd n_exp = (
-                was_fired_at := Time.current_mcsec ();
+                Reactor.set_state reactor (Time.current_mcsec ());
                 Reactor.exit_run reactor
             )
 
             val logger = StdOutLogger.init LoggerLevel.Off
-            val r = Reactor.init 2 logger
+
+            (* The state keeps the timestamp timer has been fired at. *)
+            val (state : int) = ~1
+            val r = Reactor.init state logger
 
             val was_created_at = Time.current_mcsec ()
             val _ = Reactor.add_timer r "timer" initial 0 on_timer on_error
             val _ = Reactor.run r
 
-            val diff = (!was_fired_at) - was_created_at
+            val was_fired_at = Reactor.get_state r
+            val diff = was_fired_at - was_created_at
        in
             Assert.assert 
                 ("Timer has been fired after invalid period of time. " ^ 
                  "Was created at: " ^ Int.toString was_created_at ^ 
-                 ", was fired at: " ^ Int.toString (!was_fired_at) ^
+                 ", was fired at: " ^ Int.toString was_fired_at ^
                  ". The absolute difference with expected: " ^ Int.toString (abs_diff diff initial))
                 (abs_diff diff initial < eps)
        end
@@ -44,30 +46,35 @@ struct
                 Assert.fail "Error occured"
             fun on_timer reactor fd n_exp = 
                 if 
-                    (!was_fired_once)
-                then (
-                    was_fired_at := Time.current_mcsec ();
+                    (fst (Reactor.get_state reactor) < 0)
+                then
+                    Reactor.set_state reactor (Time.current_mcsec (), ~1)
+                else
+                let
+                    val was_first_fired_at = fst (Reactor.get_state reactor)
+                in
+                    Reactor.set_state reactor (was_first_fired_at, Time.current_mcsec ());
                     Reactor.exit_run reactor
-                ) else (
-                    was_fired_once := True
-                )
+                end
 
-                val logger = StdOutLogger.init LoggerLevel.Off
-                val r = Reactor.init 2 logger
+            val logger = StdOutLogger.init LoggerLevel.Off
+                
+            (* The state keeps timestamps timer has been fired first and second times. *)
+            val state = (~1, ~1)
 
-                val was_created_at = Time.current_mcsec ()
-                val _ = Reactor.add_timer r "timer" initial period on_timer on_error
-               
-                val _ = Reactor.run r
+            val r = Reactor.init state logger
+            val _ = Reactor.add_timer r "timer" initial period on_timer on_error    
+            val _ = Reactor.run r
 
-                val diff = (!was_fired_at) - was_created_at
+            val (was_first_fired_at, was_second_fired_at) = Reactor.get_state r
+            val diff = was_second_fired_at - was_first_fired_at
         in
             Assert.assert 
                 ("Timer has been fired after invalid period of time. " ^ 
-                 "Was created at: " ^ Int.toString was_created_at ^ 
-                 ", was fired at: " ^ Int.toString (!was_fired_at) ^
-                 ". The absolute difference with expected: " ^ Int.toString (abs_diff diff (initial + period)))
-                (abs_diff diff (initial + period) < eps)
+                 "Was first fired at: " ^ Int.toString was_first_fired_at ^ 
+                 ", was second fired at: " ^ Int.toString was_second_fired_at ^
+                 ". The absolute difference with expected: " ^ Int.toString (abs_diff diff period))
+                (abs_diff diff period < eps)
         end
 
     (*****************************************************************************************)
