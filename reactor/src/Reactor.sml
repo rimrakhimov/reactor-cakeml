@@ -423,7 +423,7 @@ struct
                     logger
                     ("Reactor.handle_timer: FD=" ^ Int.toString fd ^
                      ". Read n=" ^ Int.toString n ^ " bytes.");
-                timer_handler reactor fd
+                timer_handler reactor fd n
             end
 
 

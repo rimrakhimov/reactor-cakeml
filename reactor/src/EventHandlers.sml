@@ -42,8 +42,9 @@ type 'a accept_handler = ('a -> int -> int -> sockaddr_in -> unit)
  *
  *  @param reactor `'b reactor`: current reactor state.
  *  @param fd `int`: file descriptor where event occured at.
+ *  @param count `int`: number of expirations occurred.
  *)
-type 'a timer_handler = ('a -> int -> unit)
+type 'a timer_handler = ('a -> int -> int -> unit)
 
 (**
  *  An event handler that is called if any error occured 
