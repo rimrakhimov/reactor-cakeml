@@ -45,4 +45,24 @@ struct
         in
             ByteArray.subarray outbuf 5 n
         end
+
+    (**
+     *  Put file descriptor into blocking/nonblocking mode.
+     *
+     *  @param fd `int`: a descriptor to put the mode.
+     *  @param blocking `bool`: if true the descriptor will
+     *      be put into blocking mode, otherwise the descriptor
+     *      will be put into nonblocking mode.
+     *
+     *  @raises `FFIFailure` if `fcntl` syscall fails with an error.
+     *)
+    fun set_blocking (fd : int) (blocking : bool) =
+        let
+            val inbuf = Word8Array.array 1 (Word8.fromInt (if blocking then 0 else 1))
+            val outbuf = ByteArray.empty 1
+        in
+            #(fd_set_blocking) (ByteArray.to_string inbuf) outbuf;
+            FFIHelper.validate_status outbuf;
+            ()
+        end
 end

@@ -475,6 +475,111 @@ struct
                 ("Reactor.set_timer: FD=" ^ Int.toString fd ^ ". Timer was set.")
         end
 
+    local
+        (**
+         *  Internal implementation to add read or write files into the reactor.
+         *
+         *  @param reactor `'a reactor`: a reactor where files should be added into.
+         *  @param name `string`: a name that will be referring to added file.
+         *  @param fd `int`: a file descriptor that refers to added file.
+         *  @param on_read_opt `'a reactor read_handler option`: an optional field
+         *      with on read event handler. We use these argument to distinguish between
+         *      `add_read_file` and `add_write_file` callers.
+         *  @param on_error `'a reactor err_handler`
+         *  @param bufsz `int`: a size of the buffer corresponding to the file.
+         *  @param lwm `int`: lower watermark that the buffer should have.
+         *
+         *  @raises `ReactorBadArgumentError` if any of the arguments is invalid.
+         *  @raises `ReactorSystemError` if syscalls to make file nonblocking,
+         *      or add file into the epoll mechanism fails.
+         *)
+        fun add_file reactor (name : string) (fd : int) on_read_opt on_error
+                (bufsz : int) (lwm : int) =
+            let
+                fun validate_args logger (a_where : string) (name : string) 
+                        (bufsz : int) (lwm : int) (zero_allowed : bool) = (
+                    (* Check the common preconditions. *)
+                    if (bufsz < 0) orelse (lwm < 0) orelse (lwm > bufsz)
+                    then (
+                        Logger.error
+                            logger
+                            ("Reactor." ^ a_where ^ ": Name=" ^ name ^
+                            ". Invalid BuffSz or LowWaterMark." ^
+                            " Buffsz=" ^ Int.toString bufsz ^
+                            ", LowWaterMark=" ^ Int.toString lwm ^ ".");
+                        raise ReactorBadArgumentError
+                    ) else ();
+
+                    (* If buffer size should be positive, check that condition too. *)
+                    if (not zero_allowed) andalso (bufsz = 0)
+                    then (
+                        Logger.error
+                            logger
+                            ("Reactor." ^ a_where ^ ": Name=" ^ name ^
+                            ". Buffer must not be 0-size.");
+                        raise ReactorBadArgumentError
+                    ) else ()
+                )
+
+                (* If there is an read handler, then we deal with a read file,
+                 * otherwise we deal with write file. *)
+                val is_read = Option.isSome on_read_opt
+                val a_where = if is_read then "add_read_file" else "add_write_file"
+                (* Buffer with zero size is not allowed for read files,
+                 * as there would be no space to read data into. *)
+                val zero_allowed = if is_read then False else True
+
+                val logger = ReactorType.get_logger reactor
+            in
+                (* Validate arguments before continuing *)
+                validate_args logger a_where name bufsz lwm zero_allowed;
+
+                (* IMPORTANT: the descriptor may be created blocking. Thus, explicitly 
+                 * set the descriptor into non-blocking mode, before using it in the reactor. *)
+                Fd.set_blocking fd False
+                handle FFIFailure => (
+                    Logger.error
+                        logger
+                        ("Reactor." ^ a_where ^ ": FD=" ^ Int.toString fd ^
+                         ". Could not set O_NONBLOCK mode. Failed with " ^ 
+                         Errno.errno_strerror () ^ ".");
+                    raise ReactorSystemError
+                );
+
+                let
+                    (* In theory could raise `IOBufferLowWatermarkTooHigh` exception
+                     * but would not, as we verified that watermark is not greater
+                     * than the buffer size. *)
+                    val buff = IOBuffer.init bufsz lwm
+                    val fd_info = 
+                        if is_read 
+                        then ReadFileFdInfo name fd (Option.valOf on_read_opt) on_error buff
+                        else WriteFileFdInfo name fd on_error buff
+
+                    (* Create the events mask *)
+                    val ev = if is_read then Epollin else Epollout
+                    val events_mask = EpollEventsMask.from_list [Epollet, Epollrdhup, ev]
+                in
+                    ReactorPrivate.add_to_epoll reactor a_where fd_info events_mask
+                    handle ReactorSystemError => (
+                        (* Addition to the epoll mechanism failed. But as the descriptor
+                         * was opened not by us, we do not close it. Just propagete
+                         * the exception further to let client know that there was an error.
+                         *)
+                        raise ReactorSystemError
+                    )
+                end
+            end
+    in
+        fun add_read_file reactor (name : string) (fd : int) on_read on_error
+                (rd_bufsz : int) (rd_lwm : int) =
+            add_file reactor name fd (Some on_read) on_error rd_bufsz rd_lwm
+
+        fun add_write_file reactor (name : string) (fd : int) on_error 
+                (wr_bufsz : int) (wr_lwm : int) =
+            add_file reactor name fd None on_error wr_bufsz wr_lwm
+    end
+
     fun handle_timer reactor fd_info (events_mask : epoll_events_mask) =
         (* In timer we are only interested in Readability events;
          * all other events are silently ignored. *)
@@ -488,8 +593,18 @@ struct
                 val timer_handler = FdInfoType.get_timer_handler fd_info
                 val buff = FdInfoType.get_rd_buff fd_info
 
-                val n = IO.read_until_eagain fd buff
+                fun on_read r (fd : int) (data : string) = 
+                    let
+                        val n_expirations = MarshallingHelp.w82n_little (ByteArray.from_string data) 0
+                    in
+                        timer_handler r fd n_expirations;
+                        8
+                    end
+
+                val n = IO.read_until_eagain reactor fd buff on_read
                     handle
+                        (* User-defined error handler is invloked inside 
+                         * `ReactorPrivate.handle_critical_io_error` function. *)
                         FFIFailure =>
                             (* In this case, we terminate the whole Reactor because
                              * it is a serious INTERNAL error condition. *)
@@ -501,15 +616,11 @@ struct
                              *  In this case, we terminate the whole Reactor as well. *)
                             ReactorPrivate.handle_critical_io_error
                                 reactor "handle_timer" fd_info "read() failed with Buffer Overflow"
-                (* Read the number of expirations and clean the buffer. *)
-                val n_expirations = MarshallingHelp.w82n_little (ByteArray.from_string (IOBuffer.read buff n)) 0
-                val _ = IOBuffer.consume_and_crunch buff n
             in
                 Logger.info
                     logger
                     ("Reactor.handle_timer: FD=" ^ Int.toString fd ^
-                     ". Read n=" ^ Int.toString n ^ " bytes.");
-                timer_handler reactor fd n_expirations
+                     ". Read n=" ^ Int.toString n ^ " bytes.")
             end
 
 
@@ -641,7 +752,7 @@ fun on_error s fd = print ("\n\n===ON_ERROR: FD=" ^ Int.toString fd ^ "===\n\n")
 
 val logger = Logger.create TextIO.stdOut LoggerLevel.Info
 val reactor = Reactor.init 2 logger
-val fd = Reactor.add_timer reactor "test" 200000 0 on_timer on_error
+val fd = Reactor.add_timer reactor "test" 200000 10000000 on_timer on_error
 
 val _ = Reactor.run reactor
 handle exn => (print ("\n===EXCEPTION=" ^ Exception.exn_message exn ^ "===\n"); raise exn) *)
