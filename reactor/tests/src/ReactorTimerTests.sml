@@ -25,6 +25,8 @@ struct
 
             val was_fired_at = Reactor.get_state r
             val diff = was_fired_at - was_created_at
+
+            val _ = Reactor.clear r
        in
             Assert.assert 
                 ("Timer has been fired after invalid period of time. " ^ 
@@ -65,6 +67,8 @@ struct
 
             val (was_first_fired_at, was_second_fired_at) = Reactor.get_state r
             val diff = was_second_fired_at - was_first_fired_at
+
+            val _ = Reactor.clear r
         in
             Assert.assert 
                 ("Timer has been fired after invalid period of time. " ^ 
@@ -104,6 +108,8 @@ struct
             val _ = Reactor.run r
 
             val count = Reactor.get_state r
+
+            val _ = Reactor.clear r
         in
             Assert.assertEqualInt limit count
         end
@@ -142,6 +148,8 @@ struct
 
             val (was_set_at, was_fired_at) = Reactor.get_state r
             val diff = was_fired_at - was_set_at
+
+            val _ = Reactor.clear r
         in
             Assert.assert 
                 ("Timer has been fired after invalid period of time. " ^ 
@@ -196,6 +204,8 @@ struct
             val (_, (was_first_fired_at, was_second_fired_at)) = 
                 Reactor.get_state r
             val diff = was_second_fired_at - was_first_fired_at
+
+            val _ = Reactor.clear r
         in
             Assert.assert 
                 ("Timer has been fired after invalid period of time. " ^ 
@@ -227,4 +237,3 @@ val _ =
         (TextUITestRunner.Output TextIO.stdOut)
         "ReactorTimerTests"
         (ReactorTimerTests.suite ())
-`
