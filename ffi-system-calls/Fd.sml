@@ -47,6 +47,32 @@ struct
         end
 
     (**
+     *  Write data into a file descriptor.
+     *
+     *  @param fd `int`: a descriptor to write data into.
+     *  @param data `byte_array`: data to be written.
+     *
+     *  @returns `int`: actual number of bytes written.
+     *
+     *  @raises `FFIEagain` if file descriptor refers to nonblocking
+     *      file and `write` syscall would block.
+     *  @raises `FFIEintr` if `write` syscall was interrupted by a signal.
+     *  @raises `FFIFailure` if any other error occured during the call.
+     *)
+    fun write fd (data : byte_array) =
+        let
+            val fd_bytes = MarshallingHelp.n2w4 fd
+
+            val inbuf = ByteArray.concat fd_bytes data
+            val outbuf = ByteArray.empty (1 + 4)
+        in
+            #(fd_write) (ByteArray.to_string inbuf) outbuf;
+            FFIHelper.validate_status outbuf;
+            MarshallingHelp.w42n outbuf 1
+        end
+
+
+    (**
      *  Put file descriptor into blocking/nonblocking mode.
      *
      *  @param fd `int`: a descriptor to put the mode.
