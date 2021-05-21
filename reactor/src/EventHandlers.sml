@@ -1,3 +1,11 @@
+datatype 'a reactor_function_request = 
+    AddTimer string int int
+        ('a timer_handler)
+        ('a err_handler)
+        ('a -> int -> 'a * 'a reactor_function_request option)
+        ('a -> int -> 'a * 'a reactor_function_request option)
+  | ExitRun
+
 (** 
  *  The file defines event handlers: function signatures which callback functions
  *  provided by client applications should correspond to. 
@@ -15,7 +23,7 @@
  *
  *  @returns number of bytes that has been used from the incoming data.
  *)
-type 'a read_handler = ('a -> int -> string -> int)
+and 'a read_handler = ReadHandler ('a -> int -> string -> 'a * int * 'a reactor_function_request option)
 
 (**
  *  An event handler that is called when a socket is connected.
@@ -23,7 +31,7 @@ type 'a read_handler = ('a -> int -> string -> int)
  *  @param reactor `'b reactor`: current reactor state.
  *  @param fd `int`: file descriptor where event occured at.
  *)
-type 'a connect_handler = ('a -> int -> unit)
+and 'a connect_handler = ConnectHandler ('a -> int -> 'a * 'a reactor_function_request option)
 
 (**
  *  An event handler that is called when a listening socket 
@@ -35,7 +43,7 @@ type 'a connect_handler = ('a -> int -> unit)
  *  @param clint_addr `sockaddr_in`: an address of the connected client 
  *      (IPv4 address and port number).
  *)
-type 'a accept_handler = ('a -> int -> int -> sockaddr_in -> unit)
+and 'a accept_handler = AcceptHandler ('a -> int -> int -> sockaddr_in -> 'a * 'a reactor_function_request option)
 
 (**
  *  An event handler that is called when a timer fires.
@@ -44,7 +52,7 @@ type 'a accept_handler = ('a -> int -> int -> sockaddr_in -> unit)
  *  @param fd `int`: file descriptor where event occured at.
  *  @param count `int`: number of expirations occurred.
  *)
-type 'a timer_handler = ('a -> int -> int -> unit)
+and 'a timer_handler = TimerHandler ('a -> int -> int -> 'a * 'a reactor_function_request option)
 
 (**
  *  An event handler that is called if any error occured 
@@ -53,4 +61,4 @@ type 'a timer_handler = ('a -> int -> int -> unit)
  *  @param reactor `'b reactor`: current reactor state.
  *  @param fd `int`: file descriptor where error occured at.
  *)
-type 'a err_handler = ('a -> int -> unit)
+and 'a err_handler = ErrHandler ('a -> int -> 'a * 'a reactor_function_request option)

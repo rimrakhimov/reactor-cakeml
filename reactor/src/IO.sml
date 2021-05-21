@@ -28,7 +28,7 @@ struct
      *)
     fun read_until_eagain reactor (fd : int) (buff : io_buffer) on_read =
         let
-            fun internal (n_total : int) =
+            fun internal reactor (n_total : int) =
                 let
                     val space = IOBuffer.capacity buff
 
@@ -49,29 +49,30 @@ struct
 
                         IOBuffer.write buff data;
                         let
-                            val consumed = on_read reactor fd (IOBuffer.read buff (IOBuffer.size buff))
+                            val (new_reactor, consumed) = on_read reactor fd (IOBuffer.read buff (IOBuffer.size buff))
                         in
                             (* If some data has been consumed, remove it from the buffer and
                              * crunch it if size left is less than lower watermark. *)
                             if consumed > 0
                             then IOBuffer.consume_and_crunch buff consumed
-                            else ()
-                        end;
-                        (* There is still data available to be read. *)
-                        internal (n_total + Word8Array.length data)
+                            else ();
+                            
+                            (* There is still data available to be read. *)
+                            internal new_reactor (n_total + Word8Array.length data)
+                        end
                     ) else if
                         status = FFICodes.eagain
                     then (* No more data available - return the total amount read. *)
-                        n_total
+                        (reactor, n_total)
                     else if 
                         status = FFICodes.eintr
                     then (* The syscall was interrupted. No data has been read. Try again. *)
-                        internal n_total
+                        internal reactor n_total
                     else (* Any other error occurred while reading. *)
                         raise FFIFailure
                 end
         in
-            internal 0
+            internal reactor 0
         end
 end
 
