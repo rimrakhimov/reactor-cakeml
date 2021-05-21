@@ -746,13 +746,25 @@ in
     val _ = Exception.add_exn_message_printer exn_printer
 end
 
-(* val a = Ref 0
-fun on_timer s fd n = (a := (!a) + 1; print ("\n\n===ON_TIMER: FD=" ^ Int.toString fd ^ ", N=" ^ Int.toString n ^ ", A=" ^ Int.toString (!a) ^ "===\n\n"))
+(* fun on_timer s fd n = (a := (!a) + 1; print ("\n\n===ON_TIMER: FD=" ^ Int.toString fd ^ ", N=" ^ Int.toString n ^ ", A=" ^ Int.toString (!a) ^ "===\n\n")) *)
 fun on_error s fd = print ("\n\n===ON_ERROR: FD=" ^ Int.toString fd ^ "===\n\n")
+
+(* val t1 = Word8Array.array (1024) (Word8.fromInt 32)
+val s1 = Word8Array.substring t1 0 (1024)
+val s2 = Word8Array.substring (Word8Array.array (1024 * 1024 * 100) (Word8.fromInt 64)) 0 (1024 * 1024 * 100) *)
+(* val s = String.explode s1 *)
+(* val s = s1 ^ s2 *)
+
+val l = List.genlist Word64.fromInt (1024*1024*1)
+
+
+fun on_timer s fd n = (
+    print ("\n\n====ON_TIMER====\n\n")
+)
 
 val logger = Logger.create TextIO.stdOut LoggerLevel.Info
 val reactor = Reactor.init 2 logger
-val fd = Reactor.add_timer reactor "test" 200000 10000000 on_timer on_error
+val fd = Reactor.add_timer reactor "test" 15000000 10000000 on_timer on_error
 
 val _ = Reactor.run reactor
-handle exn => (print ("\n===EXCEPTION=" ^ Exception.exn_message exn ^ "===\n"); raise exn) *)
+handle exn => (print ("\n===EXCEPTION=" ^ Exception.exn_message exn ^ "===\n"); raise exn)

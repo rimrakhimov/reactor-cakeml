@@ -73,6 +73,26 @@ struct
         in
             internal 0
         end
+
+    (* fun write_until_eagain reactor (data : string) (buff : io_buffer) =
+        let
+            fun internal (data : string) (n_total : int) =
+                let
+                    val rem = String.size data
+                in
+                  ()
+                end
+
+            fun write_buffer (buff : io_buffer) =
+                        let
+                        in
+                            if IOBuffer.empty buff
+                            then ()
+                            else ()
+                        end
+        in
+            internal data 0
+        end *)
 end
 
 local
