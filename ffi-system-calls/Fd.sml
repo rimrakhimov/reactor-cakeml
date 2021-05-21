@@ -58,7 +58,10 @@ struct
      *)
     fun set_blocking (fd : int) (blocking : bool) =
         let
-            val inbuf = Word8Array.array 1 (Word8.fromInt (if blocking then 0 else 1))
+            val fd_bytes = MarshallingHelp.n2w4 fd
+            val blocking_bytes = Word8Array.array 1 (Word8.fromInt (if blocking then 1 else 0))
+            
+            val inbuf = ByteArray.concat_all [fd_bytes, blocking_bytes]
             val outbuf = ByteArray.empty 1
         in
             #(fd_set_blocking) (ByteArray.to_string inbuf) outbuf;
