@@ -4,6 +4,9 @@ datatype 'a reactor_function_request =
         ('a err_handler)
         ('a -> int -> 'a * 'a reactor_function_request option)
         ('a -> int -> 'a * 'a reactor_function_request option)
+  | SetTimer int int int
+        ('a -> 'a * 'a reactor_function_request option)
+        ('a -> int -> 'a * 'a reactor_function_request option)
   | ExitRun
 
 (** 

@@ -303,6 +303,63 @@ struct
             fd
         end
 
+    (*
+     *  Arms (starts) or disarms (stops) the timer referred to by 
+     *  the file descriptor included into the reactor.
+     *
+     *  @param reactor `'a reactor`.
+     *  @param fd `int`: a file descriptor refferring to the timer.
+     *  @param initial_mcsec `int`: a period of time in microseconds
+     *      after which the timer will expire the first time.
+     *  @param period_mcsec `int`: a period of time in microseconds
+     *      that timer periodically fires after the first expiration.
+     *
+     *  @raises `ReactorSystemError` if timer setting returns an error.
+     *      Corresponding file descriptor is removed from the reactor
+     *      and closed.
+     *  @raises `ReactorBadArgumentError` if provided file descriptor does
+     *      not belong to the reactor or is not a TimerFdInfo.
+     *)
+    fun set_timer reactor (fd : int) (initial_mcsec : int) (period_mcsec : int) =
+        let
+            val logger = ReactorType.get_logger reactor
+            
+            val fd_info = 
+                case ReactorType.get_fd_info_opt reactor fd of
+                    Some fd_info => fd_info
+                  | None => (
+                        Logger.error
+                            logger
+                            ("Reactor.set_timer: FD=" ^ Int.toString fd ^
+                             ". The descriptor does not belong to the reactor.");
+                        raise ReactorBadArgumentError
+                  )
+        in
+            (* Validate that fd_info indeed belongs to a timer. *)
+            if not (FdInfoType.is_timer fd_info)
+            then (
+                Logger.error
+                    logger
+                    ("Reactor.set_timer: FD=" ^ Int.toString fd ^
+                     ". Corresponding fd_info is not a Timer.");
+                raise ReactorBadArgumentError
+            )
+            else ();
+
+            Timer.set_time fd initial_mcsec period_mcsec
+            handle FFIFailure => (
+                raise_reactor_system_error (fn errno => (
+                    Logger.error
+                        logger
+                        ("Reactor.set_timer: FD=" ^ Int.toString fd ^ ". set_timer() failed.")
+                )) None
+            );
+
+            Logger.info 
+                logger
+                ("Reactor.set_timer: FD=" ^ Int.toString fd ^ ". Timer was set.")
+        end
+
     (**
      *  Stops the reactor execution. Should be used very carefully,
      *  as the execution of running loop is stopped, and all uprorcessed
@@ -338,7 +395,17 @@ struct
                 (reactor, new_request_opt)
             end
 
-        fun process_exit_run reactor = exit_run reactor
+        fun process_set_timer_request reactor fd initial_mcsec period_mcsec callback =
+            let
+                val _ = set_timer reactor fd initial_mcsec period_mcsec
+                val (new_state, new_request_opt) = callback (ReactorType.get_state reactor)
+            in
+                ReactorType.set_state reactor new_state;
+                (reactor, new_request_opt)
+            end
+
+        fun process_exit_run reactor = 
+            exit_run reactor
 
     in
         fun handle_function_request reactor request_opt =
@@ -348,8 +415,19 @@ struct
                     let
                         val (new_reactor, new_request_opt) = 
                             process_add_timer_request reactor name initial_mcsec period_mcsec on_timer on_err callback
-                            handle ReactorSystemError errno => 
-                            process_error reactor error_callback errno
+                        handle 
+                            ReactorSystemError errno => process_error reactor error_callback errno
+                          | ReactorBadArgumentError => process_error reactor error_callback ~1
+                    in
+                        handle_function_request new_reactor new_request_opt
+                    end
+              | Some (SetTimer fd initial_mcsec period_mcsec callback error_callback) =>
+                    let
+                        val (new_reactor, new_request_opt) = 
+                            process_set_timer_request reactor fd initial_mcsec period_mcsec callback
+                        handle 
+                            ReactorSystemError errno => process_error reactor error_callback errno
+                          | ReactorBadArgumentError => process_error reactor error_callback ~1
                     in
                         handle_function_request new_reactor new_request_opt
                     end
@@ -442,6 +520,8 @@ end
 
 structure Reactor =
 struct
+    fun get_state reactor = ReactorType.get_state reactor
+
     (* 
      *  Creates an epoll descriptor and initializes the reactor. 
      *
@@ -602,7 +682,7 @@ val _ =
         )
 
 
-val k = Ref 0
+(* val k = Ref 0
 fun on_timer s fd n = (k := (!k) + 1; print ("\n\n===ON_TIMER=" ^ Int.toString (Time.current_msec ()) ^ ", K=" ^ Int.toString (!k) ^ "==\n\n"); (s, if (!k) > 20 then Some ExitRun else None))
 fun on_error s fd = (print ("\n\n===ON_ERROR===\n\n"); (s, None))
 
@@ -613,7 +693,7 @@ val setup_request = AddTimer "timer" 2000000 5000000 (TimerHandler on_timer) (Er
 
 val logger = Logger.create TextIO.stdOut LoggerLevel.Info
 val reactor = Option.valOf (Reactor.init 2 logger setup_request)
-val reactor = Reactor.run reactor
+val reactor = Reactor.run reactor *)
 
 (* val a = Ref 0
 fun on_timer s fd n = (a := (!a) + 1; print ("\n\n===ON_TIMER: FD=" ^ Int.toString fd ^ ", N=" ^ Int.toString n ^ ", A=" ^ Int.toString (!a) ^ "===\n\n"))
