@@ -624,24 +624,25 @@ struct
      *      executed while an error occurred.
      *  @param fd_info `'a reactor fd_info`: information about descriptor 
      *      where error occurred.
+     *  @param errno_opt `int option`: if provided is used as an errno argument
+     *      in error handler. If not provided, current `Errno.errno ()` is used.
      *  @param msg `string`: a message that is appended to the end of the logs.
      *
      *  @raises `ReactorExitRun` which should be handled in the poll cycle.
      *)
-    fun handle_critical_io_error reactor (a_where : string) fd_info (msg : string) =
+    fun handle_critical_io_error reactor (a_where : string) fd_info (errno_opt : int option) (msg : string) =
         let
             val logger = ReactorType.get_logger reactor
 
             val fd = FdInfoType.get_fd fd_info
             val name = FdInfoType.get_name fd_info
-            val errno = Errno.errno ()
-            val errno_strerror = Errno.strerror errno
+            val errno = case errno_opt of Some errno => errno | None => Errno.errno ()
 
             val (ErrHandler err_handler) = FdInfoType.get_err_handler fd_info
 
             val to_log = "Reactor." ^ a_where ^ ": FD=" ^ Int.toString fd ^
                 ", Name=" ^ name ^ ", errno=" ^ Int.toString errno ^
-                ", desc=" ^ errno_strerror ^ ": " ^ msg ^ "."
+                ": " ^ msg ^ "."
             val _ = Logger.critical logger to_log
 
             (* Invoke used-defined error handler. *)
@@ -693,18 +694,18 @@ struct
                                 (* In this case, we terminate the whole Reactor because
                                  * it is a serious INTERNAL error condition. *)
                                 handle_critical_io_error 
-                                    reactor "handle_timer" fd_info "read() failed"
+                                    reactor "handle_timer" fd_info None "read() failed"
                           | IOBufferOverflow =>
                                 (*  Means that there is some logical error on the reactor
                                  *  side, as it was we who created a buffer. 
                                  *  In this case, we terminate the whole Reactor as well. *)
                                 handle_critical_io_error
-                                    reactor "handle_timer" fd_info "read() failed with Buffer Overflow"
+                                    reactor "handle_timer" fd_info (Some ~1) "read() failed with Buffer Overflow"
                           | IOEndOfFile =>
                                 (* In this case, we terminate the whole Reactor because
                                  * it is a serious INTERNAL error condition. *)
                                 handle_critical_io_error
-                                    reactor "handle_timer" fd_info "read() results in End-Of-File"
+                                    reactor "handle_timer" fd_info (Some ~2) "read() results in End-Of-File"
                   )
             end
 
