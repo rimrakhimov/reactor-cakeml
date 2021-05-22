@@ -21,7 +21,7 @@ struct
 		val _ = #(test_file_read_non_blocking) "" outbuf
 		val read_fd = MarshallingHelp.w42n outbuf 0
 
-		fun on_error state fd =
+		fun on_error state fd errno =
 			Assert.fail "Error occured"
 		fun on_read state fd buff = 
 		let

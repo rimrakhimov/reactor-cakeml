@@ -608,7 +608,7 @@ struct
             val _ = Logger.error logger to_log
 
             (* Invoke used-defined error handler. *)
-            val (new_state, new_request_opt) = err_handler (ReactorType.get_state reactor) fd
+            val (new_state, new_request_opt) = err_handler (ReactorType.get_state reactor) fd errno
         in
             ReactorType.set_state reactor new_state;
             handle_function_request reactor new_request_opt
@@ -646,7 +646,7 @@ struct
             val _ = Logger.critical logger to_log
 
             (* Invoke used-defined error handler. *)
-            val (new_state, new_request_opt) = err_handler (ReactorType.get_state reactor) fd
+            val (new_state, new_request_opt) = err_handler (ReactorType.get_state reactor) fd errno
         in
             ReactorType.set_state reactor new_state;
             handle_function_request reactor new_request_opt;

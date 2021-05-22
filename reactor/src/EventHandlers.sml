@@ -71,5 +71,14 @@ and 'a timer_handler = TimerHandler ('a -> int -> int -> 'a * 'a reactor_functio
  *
  *  @param reactor `'b reactor`: current reactor state.
  *  @param fd `int`: file descriptor where error occured at.
+ *  @param errno `int`: error number of occuring error.
+ *      If error is connected with FFI calls, the number is 
+ *      positive. Is '0' if error was returned from an `epoll_wait`.
+ *      Is '~1' if error raised was referred to `IOBufferOverflow`.
+ *      Is `~2` if error raised was referred to `IOEndOfFile`.
+ *  (* @param events_mask `int`: the last mask that was obtained from
+ *      `epoll_wait`, which used in event handling. In general may be useful
+ *      if errno equals zero, what means that the error was obtained as
+ *      an `epoll_wait` event. *) - FROZEN FOR NOW
  *)
-and 'a err_handler = ErrHandler ('a -> int -> 'a * 'a reactor_function_request option)
+and 'a err_handler = ErrHandler ('a -> int -> int -> 'a * 'a reactor_function_request option)

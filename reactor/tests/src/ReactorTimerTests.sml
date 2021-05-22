@@ -27,7 +27,7 @@ struct
                         (abs_diff diff initial < eps)
                 end
 
-            fun on_error state fd =
+            fun on_error state fd errno =
                 Assert.fail "Error occured"
             fun on_timer state fd n_exp = (
                 validate (fst state, Time.current_mcsec ());
@@ -61,7 +61,7 @@ struct
                         (abs_diff diff period < eps)
                 end
 
-            fun on_error state fd =
+            fun on_error state fd errno =
                 Assert.fail "Error occured"
             fun on_timer state fd n_exp = 
                 if 
@@ -98,7 +98,7 @@ struct
             fun validate state = 
                 Assert.assertEqualInt limit state
 
-            fun on_error state fd =
+            fun on_error state fd errno =
                 Assert.fail "Error occurred"
             fun on_timer state fd n_exp =
                 if state < limit
@@ -139,7 +139,7 @@ struct
                         (abs_diff diff initial < eps)
                 end
 
-            fun on_error state fd =
+            fun on_error state fd errno =
                 Assert.fail "Error occured"
             fun on_timer state fd n_exp =
                 let
@@ -185,7 +185,7 @@ struct
             fun add_timer_callback state fd =
                 (state, Some (SetTimer fd initial period set_timer_callback error_callback))
 
-            fun on_error state fd =
+            fun on_error state fd errno =
                 Assert.fail "Error occured"
             fun on_timer state fd n_exp = 
                 if 
