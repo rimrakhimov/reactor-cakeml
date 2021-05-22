@@ -240,9 +240,10 @@ struct
             ReactorType.set_is_closed reactor True;
             Logger.info logger "Reactor.clear: reactor cleared"
         end
+end
 
-    (* fun  *)
-
+structure ReactorRequest = 
+struct
     (*
      *  Creates a new timer with specified parameters and adds it into the reactor.
      *
@@ -267,7 +268,7 @@ struct
 
             val fd = Timer.create ()
             handle FFIFailure => (
-                raise_reactor_system_error (fn errno => 
+                ReactorPrivate.raise_reactor_system_error (fn errno => 
                     Logger.error
                         logger
                         ("Reactor.add_timer: create_timer() failed with Error=" ^
@@ -279,12 +280,12 @@ struct
 
             val _ = Timer.set_time fd initial_mcsec period_mcsec
             handle FFIFailure => (
-                raise_reactor_system_error (fn errno => (
+                ReactorPrivate.raise_reactor_system_error (fn errno => (
                     Logger.error
                         logger
                         ("Reactor.add_timer: set_timer() failed with Error=" ^
                          Int.toString errno ^ ". FD=" ^ Int.toString fd ^ ".");
-                    close_fd logger "add_timer" fd
+                    ReactorPrivate.close_fd logger "add_timer" fd
                 )) None
             )
             val _ = Logger.info logger
@@ -299,7 +300,7 @@ struct
             val fd_info = TimerFdInfo name fd on_timer on_error buff
             val events_mask = EpollEventsMask.from_list [Epollet, Epollin]
         in
-            add_to_epoll reactor "add_timer" fd_info events_mask True;
+            ReactorPrivate.add_to_epoll reactor "add_timer" fd_info events_mask True;
             fd
         end
 
@@ -348,7 +349,7 @@ struct
 
             Timer.set_time fd initial_mcsec period_mcsec
             handle FFIFailure => (
-                raise_reactor_system_error (fn errno => (
+                ReactorPrivate.raise_reactor_system_error (fn errno => (
                     Logger.error
                         logger
                         ("Reactor.set_timer: FD=" ^ Int.toString fd ^ ". set_timer() failed.")
@@ -376,7 +377,10 @@ struct
             Logger.info logger "Reactor.exit_run: Reactor is stopping.";
             raise ReactorExitRun
         end
+end
 
+structure ReactorInternal =
+struct
     local
         fun process_error reactor error_callback errno =
             let
@@ -388,7 +392,7 @@ struct
 
         fun process_add_timer_request reactor name initial_mcsec period_mcsec on_timer on_err callback =
             let
-                val fd = add_timer reactor name initial_mcsec period_mcsec on_timer on_err
+                val fd = ReactorRequest.add_timer reactor name initial_mcsec period_mcsec on_timer on_err
                 val (new_state, new_request_opt) = callback (ReactorType.get_state reactor) fd
             in
                 ReactorType.set_state reactor new_state;
@@ -397,7 +401,7 @@ struct
 
         fun process_set_timer_request reactor fd initial_mcsec period_mcsec callback =
             let
-                val _ = set_timer reactor fd initial_mcsec period_mcsec
+                val _ = ReactorRequest.set_timer reactor fd initial_mcsec period_mcsec
                 val (new_state, new_request_opt) = callback (ReactorType.get_state reactor)
             in
                 ReactorType.set_state reactor new_state;
@@ -405,7 +409,7 @@ struct
             end
 
         fun process_exit_run reactor = 
-            exit_run reactor
+            ReactorRequest.exit_run reactor
 
     in
         fun handle_function_request reactor request_opt =
@@ -475,7 +479,7 @@ struct
     fun handle_timer reactor fd_info (events_mask : epoll_events_mask) =
         (* In timer we are only interested in Readability events;
          * all other events are silently ignored. *)
-        if not (is_readable events_mask)
+        if not (ReactorPrivate.is_readable events_mask)
         then reactor
         else
             let
@@ -553,7 +557,7 @@ struct
                 end
 
             fun setup reactor =
-                ReactorPrivate.handle_function_request reactor (Some setup_request)
+                ReactorInternal.handle_function_request reactor (Some setup_request)
 
             val reactor_opt = Some (create ())
             handle ReactorSystemError errno => None
@@ -597,7 +601,7 @@ struct
                       | Some fd_info => (
                             case fd_info of
                                 (TimerFdInfo _ _ _ _ _) => (
-                                    ReactorPrivate.handle_timer reactor fd_info events_mask;
+                                    ReactorInternal.handle_timer reactor fd_info events_mask;
                                     if ReactorPrivate.is_error events_mask
                                     then ()
                                     else ()
