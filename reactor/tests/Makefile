@@ -53,10 +53,13 @@ TEST_UNIT_PATH = $(ROOT_PATH)/testing
 TEST_UNIT_LIST = $(TEST_UNIT_PATH)/src/Assert.sml $(TEST_UNIT_PATH)/src/Test.sml \
 					$(TEST_UNIT_PATH)/src/TextUITestRunner.sml
 
-TEST_LIST = src/*Tests.sml
+TEST_LIST = src/reactor-file-tests/ReactorFileTests.sml # src/*Tests.sml
 
 .PHONY: all
 all: Tests.cake
+
+reactor_file_tests_ffi.o: src/reactor-file-tests/ffi/reactor_file_tests_ffi.c
+	$(CC) $(CFLAGS) -o $@ -c $^
 
 timestamp_ffi.o: $(FFI_SYSTEM_CALLS_PATH)/ffi/timestamp.c
 	$(CC) $(CFLAGS) -o $@ -c $^
@@ -78,7 +81,7 @@ basis_ffi.o: $(BASIS)
 
 Tests.cake: Tests.cake.S basis_ffi.o \
 		errno_ffi.o fd_ffi.o epoll_ffi.o timer_ffi.o \
-		timestamp_ffi.o
+		timestamp_ffi.o reactor_file_tests_ffi.o
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $^
 
 Tests.cake.S: Tests.cake.sml
@@ -91,8 +94,8 @@ Tests.cake.sml: $(UTILS_LIST) $(BUFFER_LIST) $(LOGGER_LIST) $(FFI_SYSTEM_CALLS_L
 clean: 
 	$(RM) Tests.cake Tests.cake.S Tests.cake.sml basis_ffi.o \
 		errno_ffi.o fd_ffi.o epoll_ffi.o timer_ffi.o \
-		timestamp_ffi.o
+		timestamp_ffi.o reactor_file_tests_ffi.o
 
 .INTERMEDIATE: Tests.cake.S Tests.cake.sml basis_ffi.o \
 		errno_ffi.o fd_ffi.o epoll_ffi.o timer_ffi.o \
-		timestamp_ffi.o
+		timestamp_ffi.o reactor_file_tests_ffi.o
