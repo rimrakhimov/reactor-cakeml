@@ -510,9 +510,9 @@ struct
                 (reactor, new_request_opt)
             end
 
-        fun process_add_read_file_request reactor name fd on_read on_error callback =
+        fun process_add_read_file_request reactor name fd on_read on_error rd_bufsz rd_lwm callback =
             let
-                val _ = ReactorRequest.add_read_file reactor name fd on_read on_error
+                val _ = ReactorRequest.add_read_file reactor name fd on_read on_error rd_bufsz rd_lwm
                 val (new_state, new_request_opt) = callback (ReactorType.get_state reactor)
             in
                 ReactorType.set_state reactor new_state;
@@ -558,7 +558,7 @@ struct
               | Some (AddReadFile name fd on_read on_error rd_bufsz rd_lwm callback error_callback) =>
                     let
                         val (new_reactor, new_request_opt) = 
-                            process_add_read_file_request reactor name fd on_read on_error callback
+                            process_add_read_file_request reactor name fd on_read on_error rd_bufsz rd_lwm callback
                         handle
                             ReactorSystemError errno => process_error reactor error_callback errno
                           | ReactorBadArgumentError => process_error reactor error_callback ~1
@@ -577,6 +577,42 @@ struct
                     end
               | Some ExitRun => process_exit_run reactor
     end
+
+    (**
+     *  Internal function that handles occurring during i/o errors. 
+     *  It logs the error with provided information, and calls user-
+     *  specified error handler.
+     *
+     *  @param reactor `'a reactor`: a reactor where critical error occurred.
+     *  @param a_where `string`: a prefix that indicates the public reactor function 
+     *      executed while an error occurred.
+     *  @param fd_info `'a reactor fd_info`: information about descriptor 
+     *      where error occurred.
+     *  @param errno_opt `int option`: if provided is used as an errno argument
+     *      in error handler. If not provided, current `Errno.errno ()` is used.
+     *  @param msg `string`: a message that is appended to the end of the logs.
+     *)
+    fun handle_io_error reactor (a_where : string) fd_info (errno_opt : int option) (msg : string) =
+        let
+            val logger = ReactorType.get_logger reactor
+
+            val fd = FdInfoType.get_fd fd_info
+            val name = FdInfoType.get_name fd_info
+            val errno = case errno_opt of Some errno => errno | None => Errno.errno ()
+
+            val (ErrHandler err_handler) = FdInfoType.get_err_handler fd_info
+
+            val to_log = "Reactor." ^ a_where ^ ": FD=" ^ Int.toString fd ^
+                ", Name=" ^ name ^ ", errno=" ^ Int.toString errno ^
+                ": " ^ msg ^ "."
+            val _ = Logger.error logger to_log
+
+            (* Invoke used-defined error handler. *)
+            val (new_state, new_request_opt) = err_handler (ReactorType.get_state reactor) fd
+        in
+            ReactorType.set_state reactor new_state;
+            handle_function_request reactor new_request_opt
+        end
 
     (**
      *  Internal function that handles occurring during i/o errors that requires
@@ -629,8 +665,9 @@ struct
                 val (TimerHandler timer_handler) = FdInfoType.get_timer_handler fd_info
                 val buff = FdInfoType.get_rd_buff fd_info
 
-                fun on_read r (fd : int) (data : string) = 
+                fun on_read r (fd : int) (buff : io_buffer) = 
                     let
+                        val data = IOBuffer.read buff 8
                         val n_expirations = MarshallingHelp.w82n_little (ByteArray.from_string data) 0
                         val (new_state, new_request_opt) = timer_handler (ReactorType.get_state r) fd n_expirations
                     in
@@ -638,7 +675,7 @@ struct
                         (handle_function_request r new_request_opt, String.size data)
                     end
 
-                val (new_reactor, n) = IO.read_until_eagain reactor fd buff on_read
+                val (new_reactor, n_total) = IO.read_until_eagain reactor fd buff on_read ReactorType.has_fd_info
                     handle
                         (* User-defined error handler is invloked inside 
                          * `ReactorPrivate.handle_critical_io_error` function. *)
@@ -653,11 +690,54 @@ struct
                              *  In this case, we terminate the whole Reactor as well. *)
                             handle_critical_io_error
                                 reactor "handle_timer" fd_info "read() failed with Buffer Overflow"
+                      | IOEndOfFile =>
+                            (* In this case, we terminate the whole Reactor because
+                             * it is a serious INTERNAL error condition. *)
+                            handle_critical_io_error
+                                reactor "handle_timer" fd_info "read() results in End-Of-File"
             in
                 Logger.info
                     logger
                     ("Reactor.handle_timer: FD=" ^ Int.toString fd ^
-                     ". Read n=" ^ Int.toString n ^ " bytes.");
+                     ". Read n=" ^ Int.toString n_total ^ " bytes.");
+                new_reactor
+            end
+
+    fun handle_read_file reactor fd_info (events_mask : epoll_events_mask) =
+        (* In read file we are only interested in Readability events;
+         * all other events are silently ignored. *)
+        if not (ReactorPrivate.is_readable events_mask)
+        then reactor
+        else
+            let
+                val logger = ReactorType.get_logger reactor
+
+                val fd = FdInfoType.get_fd fd_info
+                val (ReadHandler read_handler) = FdInfoType.get_read_handler fd_info
+                val buff = FdInfoType.get_rd_buff fd_info
+
+                fun on_read r (fd : int) (buff : io_buffer) =
+                    let
+                        val (new_state, n, new_request_opt) = read_handler (ReactorType.get_state r) fd buff
+                    in
+                        ReactorType.set_state r new_state;
+                        (handle_function_request r new_request_opt, n)
+                    end
+
+                val (new_reactor, _) = IO.read_until_eagain reactor fd buff on_read ReactorType.has_fd_info
+                    handle
+                        (* User-defined error handler is invloked inside 
+                         * `ReactorPrivate.handle_critical_io_error` function. *)
+                        FFIFailure =>
+                            (handle_io_error 
+                                reactor "handle_read_file" fd_info None "read() failed", 0)
+                      | IOBufferOverflow =>
+                            (handle_io_error
+                                reactor "handle_read_file" fd_info (Some (~1)) "read() failed with Buffer Overflow", 0)
+                      | IOEndOfFile =>
+                            (handle_io_error
+                                reactor "handle_read_file" fd_info (Some (~2)) "read() results in End-Of-File", 0)
+            in
                 new_reactor
             end
 end
@@ -746,6 +826,12 @@ struct
                                     then ()
                                     else ()
                                 )
+                              | (ReadFileFdInfo _ _ _ _ _) => (
+                                    ReactorInternal.handle_read_file reactor fd_info events_mask;
+                                    if ReactorPrivate.is_error events_mask
+                                    then ()
+                                    else ()
+                              )
                         )
                 end
             

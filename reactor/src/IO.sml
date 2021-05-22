@@ -6,6 +6,14 @@
 exception IOBufferOverflow
 
 (**
+ *  Is raised for pipes and FIFOs when trying to read,
+ *  when there is no one writing to the other side.
+ *  For sockets is raised when trying to read,
+ *  when the other side closed its connection.
+ *)
+exception IOEndOfFile
+
+(**
  *  Structure defines functions to make input and output
  *  operations with the kernel buffer.
  *)
@@ -23,12 +31,22 @@ struct
      *  @param buff `io_buffer`: a buffer where data should be read into.
      *  @param on_read `'a reactor read_handler`: a callback function that is
      *      called when new data is read.
+     *  @param has_fd_info `'a reactor -> int -> bool`: a function checking
+     *      whether the file descriptor is still in the reactor.
      *
      *  @raises `FFIFailure` if `read` syscall fails with any unexpected error.
      *)
-    fun read_until_eagain reactor (fd : int) (buff : io_buffer) on_read =
+    fun read_until_eagain reactor (fd : int) (buff : io_buffer) on_read has_fd_info =
         let
             fun internal reactor (n_total : int) =
+                if 
+                    not (has_fd_info reactor fd)
+                then 
+                    (* The descriptor has been removed from the reactor somewhere
+                     * during read_handler processing of income data. Stop reading
+                     * the data and return current reactor state. *)
+                    (reactor, n_total)
+                else
                 let
                     val space = IOBuffer.capacity buff
 
@@ -47,9 +65,14 @@ struct
                          *)
                         if space = 0 then raise IOBufferOverflow else ();
 
+                        (*  As the space was greater than zero, but the `read` syscall read
+                         *  zero bytes, the other side of the descriptor was closed.
+                         *)
+                        if Word8Array.length data = 0 then raise IOEndOfFile else ();
+
                         IOBuffer.write buff data;
                         let
-                            val (new_reactor, consumed) = on_read reactor fd (IOBuffer.read buff (IOBuffer.size buff))
+                            val (new_reactor, consumed) = on_read reactor fd buff
                         in
                             (* If some data has been consumed, remove it from the buffer and
                              * crunch it if size left is less than lower watermark. *)
