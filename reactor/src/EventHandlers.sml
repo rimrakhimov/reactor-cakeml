@@ -22,11 +22,11 @@ datatype 'a reactor_function_request =
  *
  *  @param reactor `'b reactor`: current reactor state.
  *  @param fd `int`: file descriptor where event occured at.
- *  @param data `string`: data that was read from the descriptor.
+ *  @param data `io_buffer`: a buffer with the data read from the descriptor.
  *
  *  @returns number of bytes that has been used from the incoming data.
  *)
-and 'a read_handler = ReadHandler ('a -> int -> string -> 'a * int * 'a reactor_function_request option)
+and 'a read_handler = ReadHandler ('a -> int -> io_buffer -> 'a * int * 'a reactor_function_request option)
 
 (**
  *  An event handler that is called when a socket is connected.
