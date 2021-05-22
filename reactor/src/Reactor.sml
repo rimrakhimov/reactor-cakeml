@@ -825,22 +825,37 @@ struct
                                 logger 
                                 ("Reactor.poll: OldFD=" ^ Int.toString fd ^
                                  ": No FDInfo, but still got Event=" ^ 
-                                 EpollEventsMask.to_string events_mask ^ ".")
+                                 EpollEventsMask.to_string events_mask ^ ".");
+                            reactor
                         )
                       | Some fd_info => (
-                            case fd_info of
-                                (TimerFdInfo _ _ _ _ _) => (
-                                    ReactorInternal.handle_timer reactor fd_info events_mask;
-                                    if ReactorPrivate.is_error events_mask
-                                    then ()
-                                    else ()
-                                )
-                              | (ReadFileFdInfo _ _ _ _ _) => (
-                                    ReactorInternal.handle_read_file reactor fd_info events_mask;
-                                    if ReactorPrivate.is_error events_mask
-                                    then ()
-                                    else ()
-                              )
+                            let
+                                val new_reactor = 
+                                    case fd_info of
+                                        (TimerFdInfo _ _ _ _ _) => 
+                                            ReactorInternal.handle_timer reactor fd_info events_mask
+                                      | (ReadFileFdInfo _ _ _ _ _) => 
+                                            ReactorInternal.handle_read_file reactor fd_info events_mask
+
+                                val fd = FdInfoType.get_fd fd_info
+                            in
+                                if ReactorPrivate.is_error events_mask
+                                then
+                                    if ReactorType.has_fd_info reactor fd
+                                    then 
+                                        (* The descriptor has not been deleted during usual event handling. 
+                                         * Log the error and call the error handler. *)
+                                        ReactorInternal.handle_io_error 
+                                            reactor "poll" fd_info (Some 0)
+                                            ("epoll_wait() returned Events=" ^ 
+                                                EpollEventsMask.to_string events_mask ^ 
+                                                "which include erroneous events")
+                                    else 
+                                        (* The descriptor has been already deleted. Just return 
+                                         * the reactor. *)
+                                        new_reactor 
+                                else new_reactor
+                            end
                         )
                 end
             
