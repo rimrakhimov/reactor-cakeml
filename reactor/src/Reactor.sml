@@ -361,6 +361,108 @@ struct
                 ("Reactor.set_timer: FD=" ^ Int.toString fd ^ ". Timer was set.")
         end
 
+    local
+        (**
+         *  Internal implementation to add read or write files into the reactor.
+         *
+         *  @param reactor `'a reactor`: a reactor where files should be added into.
+         *  @param name `string`: a name that will be referring to added file.
+         *  @param fd `int`: a file descriptor that refers to added file.
+         *  @param on_read_opt `'a reactor read_handler option`: an optional field
+         *      with on read event handler. We use these argument to distinguish between
+         *      `add_read_file` and `add_write_file` callers.
+         *  @param on_error `'a reactor err_handler`
+         *  @param bufsz `int`: a size of the buffer corresponding to the file.
+         *  @param lwm `int`: lower watermark that the buffer should have.
+         *
+         *  @raises `ReactorBadArgumentError` if any of the arguments is invalid.
+         *  @raises `ReactorSystemError` if syscalls to make file nonblocking,
+         *      or add file into the epoll mechanism fails.
+         *)
+        fun add_file reactor (name : string) (fd : int) on_read_opt on_error
+                (bufsz : int) (lwm : int) =
+            let
+                fun validate_args logger (a_where : string) (name : string) 
+                        (bufsz : int) (lwm : int) (zero_allowed : bool) = (
+                    (* Check the common preconditions. *)
+                    if (bufsz < 0) orelse (lwm < 0) orelse (lwm > bufsz)
+                    then (
+                        Logger.error
+                            logger
+                            ("Reactor." ^ a_where ^ ": Name=" ^ name ^
+                            ". Invalid BuffSz or LowWaterMark." ^
+                            " Buffsz=" ^ Int.toString bufsz ^
+                            ", LowWaterMark=" ^ Int.toString lwm ^ ".");
+                        raise ReactorBadArgumentError
+                    ) else ();
+
+                    (* If buffer size should be positive, check that condition too. *)
+                    if (not zero_allowed) andalso (bufsz = 0)
+                    then (
+                        Logger.error
+                            logger
+                            ("Reactor." ^ a_where ^ ": Name=" ^ name ^
+                            ". Buffer must not be 0-size.");
+                        raise ReactorBadArgumentError
+                    ) else ()
+                )
+
+                (* If there is an read handler, then we deal with a read file,
+                 * otherwise we deal with write file. *)
+                val is_read = Option.isSome on_read_opt
+                val a_where = if is_read then "add_read_file" else "add_write_file"
+                (* Buffer with zero size is not allowed for read files,
+                 * as there would be no space to read data into. *)
+                val zero_allowed = if is_read then False else True
+
+                val logger = ReactorType.get_logger reactor
+            in
+                (* Validate arguments before continuing *)
+                validate_args logger a_where name bufsz lwm zero_allowed;
+
+                (* IMPORTANT: the descriptor may be created blocking. Thus, explicitly 
+                 * set the descriptor into non-blocking mode, before using it in the reactor. *)
+                Fd.set_blocking fd False
+                handle FFIFailure => (
+                    ReactorPrivate.raise_reactor_system_error (fn errno => (
+                        Logger.error
+                            logger
+                            ("Reactor." ^ a_where ^ ": FD=" ^ Int.toString fd ^
+                             ". Could not set O_NONBLOCK mode. Failed with Error=" ^ 
+                             Int.toString errno ^ ".")
+                    )) None
+                );
+
+                let
+                    (* In theory could raise `IOBufferLowWatermarkTooHigh` exception
+                     * but would not, as we verified that watermark is not greater
+                     * than the buffer size. *)
+                    val buff = IOBuffer.init bufsz lwm
+                    val fd_info = 
+                        if is_read 
+                        then ReadFileFdInfo name fd (Option.valOf on_read_opt) on_error buff
+                        else WriteFileFdInfo name fd on_error buff
+
+                    (* Create the events mask *)
+                    val ev = if is_read then Epollin else Epollout
+                    val events_mask = EpollEventsMask.from_list [Epollet, Epollrdhup, ev]
+                in
+                    (* Even if addition to the epoll mechanism failed, we would not close 
+                     * the descriptor as it was not opened by us.
+                     *)
+                    ReactorPrivate.add_to_epoll reactor a_where fd_info events_mask False
+                end
+            end
+    in
+        fun add_read_file reactor (name : string) (fd : int) on_read on_error
+                (rd_bufsz : int) (rd_lwm : int) =
+            add_file reactor name fd (Some on_read) on_error rd_bufsz rd_lwm
+
+        fun add_write_file reactor (name : string) (fd : int) on_error 
+                (wr_bufsz : int) (wr_lwm : int) =
+            add_file reactor name fd None on_error wr_bufsz wr_lwm
+    end
+
     (**
      *  Stops the reactor execution. Should be used very carefully,
      *  as the execution of running loop is stopped, and all uprorcessed
@@ -408,6 +510,24 @@ struct
                 (reactor, new_request_opt)
             end
 
+        fun process_add_read_file_request reactor name fd on_read on_error callback =
+            let
+                val _ = ReactorRequest.add_read_file reactor name fd on_read on_error
+                val (new_state, new_request_opt) = callback (ReactorType.get_state reactor)
+            in
+                ReactorType.set_state reactor new_state;
+                (reactor, new_request_opt)
+            end
+
+        fun process_add_write_file_request reactor name fd on_error callback =
+            let
+                val _ = ReactorRequest.add_write_file reactor name fd on_error
+                val (new_state, new_request_opt) = callback (ReactorType.get_state reactor)
+            in
+                ReactorType.set_state reactor new_state;
+                (reactor, new_request_opt)
+            end
+
         fun process_exit_run reactor = 
             ReactorRequest.exit_run reactor
 
@@ -415,10 +535,10 @@ struct
         fun handle_function_request reactor request_opt =
             case request_opt of
                 None => reactor
-              | Some (AddTimer name initial_mcsec period_mcsec on_timer on_err callback error_callback) =>
+              | Some (AddTimer name initial_mcsec period_mcsec on_timer on_error callback error_callback) =>
                     let
                         val (new_reactor, new_request_opt) = 
-                            process_add_timer_request reactor name initial_mcsec period_mcsec on_timer on_err callback
+                            process_add_timer_request reactor name initial_mcsec period_mcsec on_timer on_error callback
                         handle 
                             ReactorSystemError errno => process_error reactor error_callback errno
                           | ReactorBadArgumentError => process_error reactor error_callback ~1
@@ -430,6 +550,26 @@ struct
                         val (new_reactor, new_request_opt) = 
                             process_set_timer_request reactor fd initial_mcsec period_mcsec callback
                         handle 
+                            ReactorSystemError errno => process_error reactor error_callback errno
+                          | ReactorBadArgumentError => process_error reactor error_callback ~1
+                    in
+                        handle_function_request new_reactor new_request_opt
+                    end
+              | Some (AddReadFile name fd on_read on_error rd_bufsz rd_lwm callback error_callback) =>
+                    let
+                        val (new_reactor, new_request_opt) = 
+                            process_add_read_file_request reactor name fd on_read on_error callback
+                        handle
+                            ReactorSystemError errno => process_error reactor error_callback errno
+                          | ReactorBadArgumentError => process_error reactor error_callback ~1
+                    in
+                        handle_function_request new_reactor new_request_opt
+                    end
+              | Some (AddWriteFile name fd on_error rd_bufsz rd_lwm callback error_callback) =>
+                    let
+                        val (new_reactor, new_request_opt) = 
+                            process_add_write_file_request reactor name fd on_error callback
+                        handle
                             ReactorSystemError errno => process_error reactor error_callback errno
                           | ReactorBadArgumentError => process_error reactor error_callback ~1
                     in

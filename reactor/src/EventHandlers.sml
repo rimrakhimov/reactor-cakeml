@@ -7,6 +7,14 @@ datatype 'a reactor_function_request =
   | SetTimer int int int
         ('a -> 'a * 'a reactor_function_request option)
         ('a -> int -> 'a * 'a reactor_function_request option)
+  | AddReadFile string int
+        ('a read_handler) ('a err_handler) int int
+        ('a -> 'a * 'a reactor_function_request option)
+        ('a -> int -> 'a * 'a reactor_function_request option)
+  | AddWriteFile string int
+        ('a err_handler) int int
+        ('a -> 'a * 'a reactor_function_request option)
+        ('a -> int -> 'a * 'a reactor_function_request option)
   | ExitRun
 
 (** 
