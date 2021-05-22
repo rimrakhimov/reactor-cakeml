@@ -34,18 +34,24 @@ struct
      *  @param has_fd_info `'a reactor -> int -> bool`: a function checking
      *      whether the file descriptor is still in the reactor.
      *
-     *  @raises `FFIFailure` if `read` syscall fails with any unexpected error.
+     *  @param returns `('a reactor * int, 'a reactor * int * exn) result`:
+     *      if no error occurs, returns Ok consisting of a new reactor
+     *      and number of bytes read. If any error occurs, returns Error consisting
+     *      of reactor state and number of bytes read before the error,
+     *      as well as an exception according to the error: `FFIFailure`, 
+     *      `IOBufferOverflow`, or `IOEndOfFile`.
      *)
     fun read_until_eagain reactor (fd : int) (buff : io_buffer) on_read has_fd_info =
         let
             fun internal reactor (n_total : int) =
                 if 
                     not (has_fd_info reactor fd)
-                then 
+                then
                     (* The descriptor has been removed from the reactor somewhere
                      * during read_handler processing of income data. Stop reading
-                     * the data and return current reactor state. *)
-                    (reactor, n_total)
+                     * the data and return current reactor state. We do not cosider
+                     * that as an error. *)
+                    Ok (reactor, n_total)
                 else
                 let
                     val space = IOBuffer.capacity buff
@@ -59,40 +65,46 @@ struct
                     if 
                         status = FFICodes.success
                     then (
-                        (*  As space was 0, and the `read` call did not return EAGAIN,
-                         *  there is still data in the buffer that may be read, but cannot
-                         *  as buffer is overflowed.
-                         *)
-                        if space = 0 then raise IOBufferOverflow else ();
-
-                        (*  As the space was greater than zero, but the `read` syscall read
-                         *  zero bytes, the other side of the descriptor was closed.
-                         *)
-                        if Word8Array.length data = 0 then raise IOEndOfFile else ();
-
-                        IOBuffer.write buff data;
-                        let
-                            val (new_reactor, consumed) = on_read reactor fd buff
-                        in
-                            (* If some data has been consumed, remove it from the buffer and
-                             * crunch it if size left is less than lower watermark. *)
-                            if consumed > 0
-                            then IOBuffer.consume_and_crunch buff consumed
-                            else ();
-                            
-                            (* There is still data available to be read. *)
-                            internal new_reactor (n_total + Word8Array.length data)
-                        end
+                        if 
+                            space = 0 
+                        then
+                            (*  As space was 0, and the `read` call did not return EAGAIN,
+                             *  there is still data in the buffer that may be read, but cannot
+                             *  as buffer is overflowed.
+                             *) 
+                            Error (reactor, n_total, IOBufferOverflow)
+                        else if 
+                            Word8Array.length data = 0
+                        then
+                            (*  As the space was greater than zero, but the `read` syscall read
+                             *  zero bytes, the other side of the descriptor was closed.
+                             *)
+                            Error (reactor, n_total, IOEndOfFile)
+                        else (
+                            IOBuffer.write buff data;
+                            let
+                                val (new_reactor, consumed) = on_read reactor fd buff
+                            in
+                                (* If some data has been consumed, remove it from the buffer and
+                                 * crunch it if size left is less than lower watermark. *)
+                                if consumed > 0
+                                then IOBuffer.consume_and_crunch buff consumed
+                                else ();
+                                
+                                (* There is still data available to be read. *)
+                                internal new_reactor (n_total + Word8Array.length data)
+                            end
+                        )
                     ) else if
                         status = FFICodes.eagain
                     then (* No more data available - return the total amount read. *)
-                        (reactor, n_total)
+                        Ok (reactor, n_total)
                     else if 
                         status = FFICodes.eintr
                     then (* The syscall was interrupted. No data has been read. Try again. *)
                         internal reactor n_total
                     else (* Any other error occurred while reading. *)
-                        raise FFIFailure
+                        Error (reactor, n_total, FFIFailure)
                 end
         in
             internal reactor 0

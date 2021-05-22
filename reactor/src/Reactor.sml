@@ -675,32 +675,37 @@ struct
                         (handle_function_request r new_request_opt, String.size data)
                     end
 
-                val (new_reactor, n_total) = IO.read_until_eagain reactor fd buff on_read ReactorType.has_fd_info
-                    handle
+                val result = IO.read_until_eagain reactor fd buff on_read ReactorType.has_fd_info
+            in
+                case result of
+                    Ok (new_reactor, n_total) => (
+                        Logger.info
+                            logger
+                            ("Reactor.handle_timer: FD=" ^ Int.toString fd ^
+                            ". Read n=" ^ Int.toString n_total ^ " bytes.");
+                        new_reactor
+                    )
+                  | Error (new_reactor, n_total, exn) => (
                         (* User-defined error handler is invloked inside 
                          * `ReactorPrivate.handle_critical_io_error` function. *)
-                        FFIFailure =>
-                            (* In this case, we terminate the whole Reactor because
-                             * it is a serious INTERNAL error condition. *)
-                            handle_critical_io_error 
-                                reactor "handle_timer" fd_info "read() failed"
-                      | IOBufferOverflow =>
-                            (*  Means that there is some logical error on the reactor
-                             *  side, as it was we who created a buffer. 
-                             *  In this case, we terminate the whole Reactor as well. *)
-                            handle_critical_io_error
-                                reactor "handle_timer" fd_info "read() failed with Buffer Overflow"
-                      | IOEndOfFile =>
-                            (* In this case, we terminate the whole Reactor because
-                             * it is a serious INTERNAL error condition. *)
-                            handle_critical_io_error
-                                reactor "handle_timer" fd_info "read() results in End-Of-File"
-            in
-                Logger.info
-                    logger
-                    ("Reactor.handle_timer: FD=" ^ Int.toString fd ^
-                     ". Read n=" ^ Int.toString n_total ^ " bytes.");
-                new_reactor
+                        case exn of 
+                            FFIFailure =>
+                                (* In this case, we terminate the whole Reactor because
+                                 * it is a serious INTERNAL error condition. *)
+                                handle_critical_io_error 
+                                    reactor "handle_timer" fd_info "read() failed"
+                          | IOBufferOverflow =>
+                                (*  Means that there is some logical error on the reactor
+                                 *  side, as it was we who created a buffer. 
+                                 *  In this case, we terminate the whole Reactor as well. *)
+                                handle_critical_io_error
+                                    reactor "handle_timer" fd_info "read() failed with Buffer Overflow"
+                          | IOEndOfFile =>
+                                (* In this case, we terminate the whole Reactor because
+                                 * it is a serious INTERNAL error condition. *)
+                                handle_critical_io_error
+                                    reactor "handle_timer" fd_info "read() results in End-Of-File"
+                  )
             end
 
     fun handle_read_file reactor fd_info (events_mask : epoll_events_mask) =
@@ -724,21 +729,24 @@ struct
                         (handle_function_request r new_request_opt, n)
                     end
 
-                val (new_reactor, _) = IO.read_until_eagain reactor fd buff on_read ReactorType.has_fd_info
-                    handle
+                val result = IO.read_until_eagain reactor fd buff on_read ReactorType.has_fd_info
+            in
+                case result of
+                    Ok (new_reactor, n_total) => new_reactor
+                  | Error (new_reactor, n_total, exn) => (
                         (* User-defined error handler is invloked inside 
                          * `ReactorPrivate.handle_critical_io_error` function. *)
-                        FFIFailure =>
-                            (handle_io_error 
-                                reactor "handle_read_file" fd_info None "read() failed", 0)
-                      | IOBufferOverflow =>
-                            (handle_io_error
-                                reactor "handle_read_file" fd_info (Some (~1)) "read() failed with Buffer Overflow", 0)
-                      | IOEndOfFile =>
-                            (handle_io_error
-                                reactor "handle_read_file" fd_info (Some (~2)) "read() results in End-Of-File", 0)
-            in
-                new_reactor
+                        case  exn of
+                            FFIFailure => 
+                                handle_io_error 
+                                    new_reactor "handle_read_file" fd_info None "read() failed"
+                          | IOBufferOverflow =>
+                                handle_io_error
+                                    new_reactor "handle_read_file" fd_info (Some (~1)) "read() failed with Buffer Overflow"
+                          | IOEndOfFile =>
+                                handle_io_error
+                                    new_reactor "handle_read_file" fd_info (Some (~2)) "read() results in End-Of-File"
+                  )
             end
 end
 
