@@ -1,6 +1,6 @@
 structure ReactorFileTests =
 struct
-    val logger = StdOutLogger.init LoggerLevel.Info
+    val logger = StdOutLogger.init LoggerLevel.Off
 
     fun add_read_file_callback state = 
         (state, None)
@@ -34,7 +34,7 @@ struct
 			then
 				Assert.fail "Invalid message has been read"
 			else (
-				if String.compare state text = Equal
+				if String.compare new_state text = Equal
 				then (
                     validate new_state;
                     (new_state, size, Some ExitRun)

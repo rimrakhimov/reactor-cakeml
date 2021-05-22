@@ -24,7 +24,7 @@ CC = gcc
 ROOT_PATH = ../..
 
 UTILS_PATH = $(ROOT_PATH)/utils
-UTILS_LIST = $(UTILS_PATH)/Exception.sml $(UTILS_PATH)/ByteArray.sml $(UTILS_PATH)/NetworkAddress.sml
+UTILS_LIST = $(UTILS_PATH)/Exception.sml $(UTILS_PATH)/Result.sml $(UTILS_PATH)/ByteArray.sml $(UTILS_PATH)/NetworkAddress.sml
 
 BUFFER_PATH = $(ROOT_PATH)/buffer
 BUFFER_LIST = $(BUFFER_PATH)/src/IOBuffer.sml
@@ -53,7 +53,7 @@ TEST_UNIT_PATH = $(ROOT_PATH)/testing
 TEST_UNIT_LIST = $(TEST_UNIT_PATH)/src/Assert.sml $(TEST_UNIT_PATH)/src/Test.sml \
 					$(TEST_UNIT_PATH)/src/TextUITestRunner.sml
 
-TEST_LIST = src/reactor-file-tests/ReactorFileTests.sml # src/*Tests.sml
+TEST_LIST = src/reactor-file-tests/ReactorFileTests.sml src/*Tests.sml
 
 .PHONY: all
 all: Tests.cake
