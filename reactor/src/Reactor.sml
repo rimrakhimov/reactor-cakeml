@@ -137,8 +137,8 @@ struct
 
     (**
      *  Internal function that removes a descriptor from the epoll
-     *  mechanism, close the descriptor, and remove corresponding
-     *  fd_info from reactor's internal structure.
+     *  mechanism and remove corresponding fd_info from reactor's 
+     *  internal structure.
      *
      *  Any errros are ignored here, and only logged with a 'warn' level of logging.
      *
@@ -147,8 +147,9 @@ struct
      *  @param a_where `string`: a prefix that indicates the public reactor function
      *      that initiated the removal.
      *  @param fd `int`: a fd that should be removed.
+     *  @param to_close `bool`: if true, the descriptor is closed after removing.
      *)
-    fun remove_from_epoll reactor (a_where : string) (fd : int) =
+    fun remove_from_epoll reactor (a_where : string) (fd : int) (to_close : bool) =
         let
             val logger = ReactorType.get_logger reactor
             val epoll_fd = ReactorType.get_epoll_fd reactor
@@ -168,7 +169,9 @@ struct
             );
 
             (* Close the file descriptor. Ignore any error here. *)
-            close_fd logger a_where fd;
+            if to_close
+            then close_fd logger a_where fd
+            else ();
 
             (* Remove file descriptor and corresponding info from the internal map *)
             ReactorType.remove_fd_info reactor fd
@@ -230,14 +233,21 @@ struct
      *)
     fun clear reactor =
         let
-            fun remove_all_fds (fds_list : int list) =
+            fun should_be_closed fd_info =
+                not (
+                    FdInfoType.is_read_file fd_info orelse FdInfoType.is_write_file fd_info
+                )
+
+            fun remove_all_fds fds_list =
                 case fds_list of
                     [] => ()
-                  | (fd :: others) => (
-                        remove_from_epoll reactor "clear" fd;
+                  | (fd_info :: others) => (
+                        remove_from_epoll 
+                            reactor "clear" 
+                            (FdInfoType.get_fd fd_info) (should_be_closed fd_info);
                         remove_all_fds others
                     )
-            val fds_list = List.map fst (Map.toAscList (ReactorType.get_fds reactor))
+            val fds_list = List.map snd (Map.toAscList (ReactorType.get_fds reactor))
 
             val logger = ReactorType.get_logger reactor
             val epoll_fd = ReactorType.get_epoll_fd reactor
@@ -526,6 +536,17 @@ struct
                  ". Written from buffer n_buff=" ^ Int.toString written_from_buff ^ " bytes" ^
                  ", written from data n_data=" ^ Int.toString written_from_data ^ " bytes.")
         end
+
+    (**
+     *  Removes a descriptor from the reactor.
+     *
+     *  @param reactor `'a reactor`
+     *  @param fd `int`: a descriptor that should be removed.
+     *
+     *  raises
+     *)
+    (* fun remove reactor fd = *)
+
 
     (**
      *  Stops the reactor execution. Should be used very carefully,
@@ -929,8 +950,11 @@ struct
 
     (**
      *  Clears the reactor: removes all added file descriptors from the
-     *  epoll mechanism and closes them. Closes main epoll descriptor,
-     *  mark the reactor as closed, which prevents it from further usage.
+     *  epoll mechanism. If the descriptor was created by the 
+     *  reactor (actually, for now it means that the descriptor does
+     *  not reffer to a file), close the descriptor. Closes main 
+     *  epoll descriptor, mark the reactor as closed, which prevents 
+     *  it from further usage.
      *
      *  Any errros are ignored here, and only logged with a 'warn' level of logging.
      *
