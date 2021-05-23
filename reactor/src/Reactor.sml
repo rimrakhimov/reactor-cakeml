@@ -105,6 +105,14 @@ struct
     fun is_writable (events_mask : epoll_events_mask) =
         EpollEventsMask.check events_mask Epollout
 
+    fun fd_info_is_writable fd_info = (
+        FdInfoType.is_write_data_stream fd_info
+            orelse 
+        FdInfoType.is_read_write_data_stream fd_info
+            orelse
+        FdInfoType.is_write_file fd_info
+    )
+
     (*
      *  Closes a specified file descriptor. If closing retunrs an error,
      *  a warning is logged, but the error is ignored. 
@@ -463,6 +471,62 @@ struct
             add_file reactor name fd None on_error wr_bufsz wr_lwm
     end
 
+    fun write reactor fd data =
+        let
+            val logger = ReactorType.get_logger reactor
+
+            val fd_info = 
+                case ReactorType.get_fd_info_opt reactor fd of
+                    Some fd_info => fd_info
+                  | None => (
+                        Logger.error
+                            logger
+                            ("Reactor.write: FD=" ^ Int.toString fd ^
+                             ". The descriptor does not belong to the reactor.");
+                        raise ReactorBadArgumentError
+                  )
+
+            (* Validate that fd_info is indeed writable. *)
+            fun validate_fd_info () =
+                if  
+                    not (ReactorPrivate.fd_info_is_writable fd_info)
+                then (
+                    Logger.error
+                        logger
+                        ("Reactor.write: FD=" ^ Int.toString fd ^
+                         ". Corresponding fd_info is not writable.");
+                    raise ReactorBadArgumentError
+                ) else ()
+            val _ = validate_fd_info ()
+
+            val wr_buff = FdInfoType.get_wr_buff fd_info
+            val initial_buff_size = IOBuffer.size wr_buff
+            val n = IO.write_until_eagain fd data wr_buff
+                handle 
+                    FFIFailure => (
+                        ReactorPrivate.raise_reactor_system_error (fn errno => (
+                            Logger.error
+                                logger
+                                ("Reactor.write: FD=" ^ Int.toString fd ^ ". write() failed.")
+                        )) None
+                    )
+                  | IOBufferOverflow => (
+                        Logger.error
+                            logger
+                            ("Reactor.write: FD=" ^ Int.toString fd ^ ".write() failed with Buffer Overflow");
+                        raise IOBufferOverflow
+                    )
+
+            val written_from_buff = min n initial_buff_size
+            val written_from_data = max 0 (n - initial_buff_size)
+        in
+            Logger.info
+                logger
+                ("Reactor.write: FD=" ^ Int.toString fd ^
+                 ". Written from buffer n_buff=" ^ Int.toString written_from_buff ^ " bytes" ^
+                 ", written from data n_data=" ^ Int.toString written_from_data ^ " bytes.")
+        end
+
     (**
      *  Stops the reactor execution. Should be used very carefully,
      *  as the execution of running loop is stopped, and all uprorcessed
@@ -528,6 +592,14 @@ struct
                 (reactor, new_request_opt)
             end
 
+        fun process_write_request reactor fd data =
+            let
+                val _ = ReactorRequest.write reactor fd data
+                handle IOBufferOverflow => raise ReactorSystemError (~1)
+            in
+                (reactor, None)
+            end
+
         fun process_exit_run reactor = 
             ReactorRequest.exit_run reactor
 
@@ -541,7 +613,7 @@ struct
                             process_add_timer_request reactor name initial_mcsec period_mcsec on_timer on_error callback
                         handle 
                             ReactorSystemError errno => process_error reactor error_callback errno
-                          | ReactorBadArgumentError => process_error reactor error_callback ~1
+                          | ReactorBadArgumentError => process_error reactor error_callback ~10
                     in
                         handle_function_request new_reactor new_request_opt
                     end
@@ -551,7 +623,7 @@ struct
                             process_set_timer_request reactor fd initial_mcsec period_mcsec callback
                         handle 
                             ReactorSystemError errno => process_error reactor error_callback errno
-                          | ReactorBadArgumentError => process_error reactor error_callback ~1
+                          | ReactorBadArgumentError => process_error reactor error_callback ~10
                     in
                         handle_function_request new_reactor new_request_opt
                     end
@@ -561,7 +633,7 @@ struct
                             process_add_read_file_request reactor name fd on_read on_error rd_bufsz rd_lwm callback
                         handle
                             ReactorSystemError errno => process_error reactor error_callback errno
-                          | ReactorBadArgumentError => process_error reactor error_callback ~1
+                          | ReactorBadArgumentError => process_error reactor error_callback ~10
                     in
                         handle_function_request new_reactor new_request_opt
                     end
@@ -571,7 +643,17 @@ struct
                             process_add_write_file_request reactor name fd on_error callback
                         handle
                             ReactorSystemError errno => process_error reactor error_callback errno
-                          | ReactorBadArgumentError => process_error reactor error_callback ~1
+                          | ReactorBadArgumentError => process_error reactor error_callback ~10
+                    in
+                        handle_function_request new_reactor new_request_opt
+                    end
+              | Some (Write fd data error_callback) =>
+                    let
+                        val (new_reactor, new_request_opt) = 
+                            process_write_request reactor fd data 
+                        handle
+                            ReactorSystemError errno => process_error reactor error_callback errno
+                          | ReactorBadArgumentError => process_error reactor error_callback ~10
                     in
                         handle_function_request new_reactor new_request_opt
                     end
@@ -651,6 +733,58 @@ struct
             ReactorType.set_state reactor new_state;
             handle_function_request reactor new_request_opt;
             raise ReactorExitRun
+        end
+
+    fun delayed_write reactor (fd : int) = 
+        let
+            val logger = ReactorType.get_logger reactor
+            val fd_info_opt = ReactorType.get_fd_info_opt reactor fd
+        in
+            case fd_info_opt of
+                None => (
+                    Logger.warn
+                        logger
+                        ("Reactor.delayed_send: FD=" ^ Int.toString fd ^
+                         ". No FDInfo but still got DelayedSend request.");
+                    reactor
+                )
+              | Some fd_info => (
+                    if 
+                        not (ReactorPrivate.fd_info_is_writable fd_info)
+                    then (
+                        Logger.warn
+                            logger
+                            ("Reactor.delayed_send: FD=" ^ Int.toString fd ^
+                             ". Is not writable but still got DelayedSend request.") ;
+                        reactor
+                    ) else
+                        let
+                            val wr_buff = FdInfoType.get_wr_buff fd_info
+                            val initial_buff_size = IOBuffer.size wr_buff
+                            val res = Ok (IO.write_until_eagain fd (ByteArray.empty 0) wr_buff)
+                                handle 
+                                    FFIFailure => Error FFIFailure
+                                  | IOBufferOverflow => Error IOBufferOverflow
+                        in
+                            case res of
+                                Ok n => (
+                                    if 
+                                        initial_buff_size > 0
+                                    then (
+                                        Logger.info
+                                            logger
+                                            ("Reactor.delayed_send: FD=" ^ Int.toString fd ^
+                                            ". Written from buffer n_buff=" ^ Int.toString n ^ " bytes.");
+                                        reactor
+                                    ) else
+                                        reactor
+                                )
+                              | Error FFIFailure =>
+                                    handle_io_error reactor "delayed_send" fd_info None "write() failed"
+                              | Error IOBufferOverflow =>
+                                    handle_io_error reactor "delayed_send" fd_info (Some (~1)) "write() failed with Buffer Overflow"
+                        end
+                )
         end
 
     fun handle_timer reactor fd_info (events_mask : epoll_events_mask) =

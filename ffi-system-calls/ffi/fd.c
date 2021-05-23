@@ -42,6 +42,31 @@ void ffifd_read(unsigned char *c, long clen, unsigned char *a, long alen) {
     }
 }
 
+void ffifd_write(unsigned char *c, long clen, unsigned char *a, long alen) {
+    /* We do not forbid writing 0 bytes here, but the application that
+     * calls it should be very careful with that, as the behaviour of a `write`
+     * syscall is unspecified for non-ordinary files in that case */
+    assert(4 <= clen);
+    assert(alen == 5);
+
+    int c_fd = byte4_to_int(c);
+
+    int msglen = clen - 4;
+    int n = write(c_fd, &c[4], msglen);
+    if (n >= 0) {
+        a[0] = FFI_SUCCESS;
+        int_to_byte4(n, &a[1]);
+    } else {
+        if (errno == EWOULDBLOCK || errno == EAGAIN) {
+            a[0] = FFI_EAGAIN;
+        } else if (errno == EINTR) {
+            a[0] = FFI_EINTR;
+        } else {
+            a[0] = FFI_FAILURE;
+        }
+    }
+}
+
 void ffifd_set_blocking(unsigned char *c, long clen, unsigned char *a, long alen) {
     assert(clen == 5);
     assert(alen == 1);

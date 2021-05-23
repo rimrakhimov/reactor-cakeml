@@ -29,8 +29,8 @@ struct
      *      argument into the read_handler.
      *  @param fd `int`: a file descriptor to read data from.
      *  @param buff `io_buffer`: a buffer where data should be read into.
-     *  @param on_read `'a reactor read_handler`: a callback function that is
-     *      called when new data is read.
+     *  @param on_read `'a reactor -> int -> io_buffer -> 'a reactor * int`: 
+     *      a callback function that is called when new data is read.
      *  @param has_fd_info `'a reactor -> int -> bool`: a function checking
      *      whether the file descriptor is still in the reactor.
      *
@@ -108,6 +108,80 @@ struct
                 end
         in
             internal reactor 0
+        end
+
+    fun write_until_eagain (fd : int) (data : byte_array) (buff : io_buffer) =
+        let
+            val chunk_size = 1024 * 1024 (* Write maximum 1Mb of data at one call. *)
+
+            val initial_buff_size = IOBuffer.size buff
+            val data_size = Word8Array.length data
+
+            fun write_into_buffer (buff : io_buffer) (data : byte_array) = (
+                (* If there is enough space inside the buffer,
+                 * save data inside. If not, raise corresponding exception. *)
+                if IOBuffer.size buff < Word8Array.length data
+                then raise IOBufferOverflow
+                else IOBuffer.write buff data
+            )
+
+            fun write_buffer (buff : io_buffer) =
+                if IOBuffer.empty buff
+                then Ok ()
+                else
+                    let
+                        val msg = IOBuffer.read buff (min chunk_size (IOBuffer.size buff))
+                        val res = Ok (Fd.write fd (ByteArray.from_string msg))
+                        handle exn => Error exn
+                    in
+                        case res of
+                            Ok n => (
+                                IOBuffer.consume_and_crunch buff n;
+                                write_buffer buff
+                            )
+                          | Error FFIEintr => 
+                                (* The syscall was interrupted. Try writing again. *)
+                                write_buffer buff
+                          | Error e => Error e (* FFIEagain or FFIFailure. *)
+                    end
+
+            fun write_data (data : byte_array) n_total =
+                let
+                    val rem = Word8Array.length data - n_total
+                in
+                    if rem = 0
+                    then ()
+                    else
+                        let
+                            val to_write = ByteArray.subarray data n_total (min rem chunk_size)
+                            val res = Ok (Fd.write fd to_write)
+                            handle exn => Error exn
+                        in
+                            case res of
+                                Ok n => write_data data (n_total + n)
+                              | Error FFIEintr => write_data data n_total
+                              | Error FFIEagain =>
+                                    (* We cannot write remaining data. Save it 
+                                     * into the buffer. *)
+                                    write_into_buffer buff (ByteArray.subarray data n_total rem)
+                              | Error FFIFailure => raise FFIFailure
+
+                        end
+                end
+
+            val write_buffer_res = write_buffer buff
+        in
+            case write_buffer_res of
+                Ok () => write_data data 0
+              | Error FFIEagain => (
+                    (* We cannot write data right now. Just 
+                     * save it into the buffer *)
+                    write_into_buffer buff data
+                )
+              | Error FFIFailure => raise FFIFailure;
+            
+            (* Calculate how many bytes have been written. *)
+            (initial_buff_size + data_size) - (IOBuffer.size buff)
         end
 end
 
