@@ -735,56 +735,44 @@ struct
             raise ReactorExitRun
         end
 
-    fun delayed_write reactor (fd : int) = 
+    (**
+     *  Sent out any bytes remaining into the wr_buff (which were)
+     *  not sent synchronously. As it is called from writable descriptor
+     *  handlers, we rely on the following preconditions:
+     *      - FDInfo has not been deleted from the reactor;
+     *      - FDInfo is writable.
+     *  It is the responsibility of the caller to ensure that these
+     *  preconditions hold.  
+     *)
+    fun delayed_write reactor fd_info = 
         let
             val logger = ReactorType.get_logger reactor
-            val fd_info_opt = ReactorType.get_fd_info_opt reactor fd
+            
+            val fd = FdInfoType.get_fd fd_info
+            val wr_buff = FdInfoType.get_wr_buff fd_info
+            val initial_buff_size = IOBuffer.size wr_buff
+            val res = Ok (IO.write_until_eagain fd (ByteArray.empty 0) wr_buff)
+                handle 
+                    FFIFailure => Error FFIFailure
+                  | IOBufferOverflow => Error IOBufferOverflow
         in
-            case fd_info_opt of
-                None => (
-                    Logger.warn
-                        logger
-                        ("Reactor.delayed_send: FD=" ^ Int.toString fd ^
-                         ". No FDInfo but still got DelayedSend request.");
-                    reactor
-                )
-              | Some fd_info => (
+            case res of
+                Ok n => (
                     if 
-                        not (ReactorPrivate.fd_info_is_writable fd_info)
+                        initial_buff_size > 0
                     then (
-                        Logger.warn
+                        Logger.info
                             logger
-                            ("Reactor.delayed_send: FD=" ^ Int.toString fd ^
-                             ". Is not writable but still got DelayedSend request.") ;
+                            ("Reactor.delayed_write: FD=" ^ Int.toString fd ^
+                             ". Written from buffer n_buff=" ^ Int.toString n ^ " bytes.");
                         reactor
                     ) else
-                        let
-                            val wr_buff = FdInfoType.get_wr_buff fd_info
-                            val initial_buff_size = IOBuffer.size wr_buff
-                            val res = Ok (IO.write_until_eagain fd (ByteArray.empty 0) wr_buff)
-                                handle 
-                                    FFIFailure => Error FFIFailure
-                                  | IOBufferOverflow => Error IOBufferOverflow
-                        in
-                            case res of
-                                Ok n => (
-                                    if 
-                                        initial_buff_size > 0
-                                    then (
-                                        Logger.info
-                                            logger
-                                            ("Reactor.delayed_send: FD=" ^ Int.toString fd ^
-                                            ". Written from buffer n_buff=" ^ Int.toString n ^ " bytes.");
-                                        reactor
-                                    ) else
-                                        reactor
-                                )
-                              | Error FFIFailure =>
-                                    handle_io_error reactor "delayed_send" fd_info None "write() failed"
-                              | Error IOBufferOverflow =>
-                                    handle_io_error reactor "delayed_send" fd_info (Some (~1)) "write() failed with Buffer Overflow"
-                        end
+                        reactor
                 )
+              | Error FFIFailure =>
+                    handle_io_error reactor "delayed_write" fd_info None "write() failed"
+              | Error IOBufferOverflow =>
+                    handle_io_error reactor "delayed_write" fd_info (Some (~1)) "write() failed with Buffer Overflow"
         end
 
     fun handle_timer reactor fd_info (events_mask : epoll_events_mask) =
@@ -883,6 +871,17 @@ struct
                                     new_reactor "handle_read_file" fd_info (Some (~2)) "read() results in End-Of-File"
                   )
             end
+
+    fun handle_write_file reactor fd_info (events_mask : epoll_events_mask) =
+        (* In write file we are only interested in Readability events;
+         * all other events are silently ignored. But we are writing only
+         * if there was no previous error, or write will likely fail. *)
+        if 
+            not (ReactorPrivate.is_writable events_mask)
+                orelse
+            ReactorPrivate.is_error events_mask
+        then reactor
+        else delayed_write reactor fd_info
 end
 
 structure Reactor =
@@ -970,6 +969,8 @@ struct
                                             ReactorInternal.handle_timer reactor fd_info events_mask
                                       | (ReadFileFdInfo _ _ _ _ _) => 
                                             ReactorInternal.handle_read_file reactor fd_info events_mask
+                                      | (WriteFileFdInfo _ _ _ _ ) =>
+                                            ReactorInternal.handle_write_file reactor fd_info events_mask
 
                                 val fd = FdInfoType.get_fd fd_info
                             in
