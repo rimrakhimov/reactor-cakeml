@@ -110,7 +110,7 @@ struct
 				(* all data has been sent and we can safely
 				 * remove the descriptor from the reactor. 
 				 * TODO: return Remove request when it would be added. *)
-				(state, None)
+				(state, Some (Remove write_fd (fn s => (s, Some (Remove fd (fn s => (s, None)))))))
 			else
 				(new_state, Some write_request)
 		end

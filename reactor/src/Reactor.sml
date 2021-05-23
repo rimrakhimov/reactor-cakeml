@@ -113,6 +113,11 @@ struct
         FdInfoType.is_write_file fd_info
     )
 
+    fun should_fd_info_be_closed fd_info =
+        not (
+            FdInfoType.is_read_file fd_info orelse FdInfoType.is_write_file fd_info
+        )
+
     (*
      *  Closes a specified file descriptor. If closing retunrs an error,
      *  a warning is logged, but the error is ignored. 
@@ -233,18 +238,13 @@ struct
      *)
     fun clear reactor =
         let
-            fun should_be_closed fd_info =
-                not (
-                    FdInfoType.is_read_file fd_info orelse FdInfoType.is_write_file fd_info
-                )
-
             fun remove_all_fds fds_list =
                 case fds_list of
                     [] => ()
                   | (fd_info :: others) => (
                         remove_from_epoll 
-                            reactor "clear" 
-                            (FdInfoType.get_fd fd_info) (should_be_closed fd_info);
+                            reactor "clear" (FdInfoType.get_fd fd_info) 
+                            (should_fd_info_be_closed fd_info);
                         remove_all_fds others
                     )
             val fds_list = List.map snd (Map.toAscList (ReactorType.get_fds reactor))
@@ -543,9 +543,27 @@ struct
      *  @param reactor `'a reactor`
      *  @param fd `int`: a descriptor that should be removed.
      *
-     *  raises
+     *  All exceptions are logged, but not propagates further.
      *)
-    (* fun remove reactor fd = *)
+    fun remove reactor (fd : int) =
+        let
+            val logger = ReactorType.get_logger reactor
+            val fd_info_opt =  ReactorType.get_fd_info_opt reactor fd
+        in
+            case fd_info_opt of
+                None => (
+                    Logger.warn
+                        logger
+                        ("Reactor.remove: FD=" ^ Int.toString fd ^
+                         ". The descriptor does not belong to the reactor.")
+                )
+              | Some fd_info => (
+                    ReactorPrivate.remove_from_epoll
+                        reactor "remove" fd
+                        (ReactorPrivate.should_fd_info_be_closed fd_info)
+              )
+               
+        end
 
 
     (**
@@ -621,6 +639,15 @@ struct
                 (reactor, None)
             end
 
+        fun process_remove_request reactor fd callback =
+            let
+                val _ = ReactorRequest.remove reactor fd
+                val (new_state, new_request_opt) = callback (ReactorType.get_state reactor)
+            in
+                ReactorType.set_state reactor new_state;
+                (reactor, new_request_opt)
+            end
+
         fun process_exit_run reactor = 
             ReactorRequest.exit_run reactor
 
@@ -675,6 +702,16 @@ struct
                         handle
                             ReactorSystemError errno => process_error reactor error_callback errno
                           | ReactorBadArgumentError => process_error reactor error_callback ~10
+                    in
+                        handle_function_request new_reactor new_request_opt
+                    end
+              | Some (Remove fd callback) =>
+                    let
+                        val (new_reactor, new_request_opt) = 
+                            process_remove_request reactor fd callback
+                        
+                        (* No exception handling, as remove operation does not through,
+                         * but just logs the exceptions. *)
                     in
                         handle_function_request new_reactor new_request_opt
                     end
