@@ -592,15 +592,12 @@ struct
                 (reactor, new_request_opt)
             end
 
-        fun process_write_request reactor fd data callback =
+        fun process_write_request reactor fd data =
             let
                 val _ = ReactorRequest.write reactor fd data
                 handle IOBufferOverflow => raise ReactorSystemError (~1)
-
-                val (new_state, new_request_opt) = callback (ReactorType.get_state reactor)
             in
-                ReactorType.set_state reactor new_state;
-                (reactor, new_request_opt)
+                (reactor, None)
             end
 
         fun process_exit_run reactor = 
@@ -650,10 +647,10 @@ struct
                     in
                         handle_function_request new_reactor new_request_opt
                     end
-              | Some (Write fd data callback error_callback) =>
+              | Some (Write fd data error_callback) =>
                     let
                         val (new_reactor, new_request_opt) = 
-                            process_write_request reactor fd data callback
+                            process_write_request reactor fd data 
                         handle
                             ReactorSystemError errno => process_error reactor error_callback errno
                           | ReactorBadArgumentError => process_error reactor error_callback ~10

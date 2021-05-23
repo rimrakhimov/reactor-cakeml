@@ -16,7 +16,6 @@ datatype 'a reactor_function_request =
         ('a -> 'a * 'a reactor_function_request option)
         ('a -> int -> 'a * 'a reactor_function_request option)
   | Write int byte_array
-        ('a -> 'a * 'a reactor_function_request option)
         ('a -> int -> 'a * 'a reactor_function_request option)
   | ExitRun
 
