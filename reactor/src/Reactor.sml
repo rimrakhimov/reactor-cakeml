@@ -467,7 +467,7 @@ struct
             add_file reactor name fd (Some on_read) on_error rd_bufsz rd_lwm
 
         fun add_write_file reactor (name : string) (fd : int) on_error 
-                (wr_bufsz : int) (wr_lwm : int) =
+                (wr_bufsz : int) (wr_lwm : int) = 
             add_file reactor name fd None on_error wr_bufsz wr_lwm
     end
 
@@ -583,9 +583,9 @@ struct
                 (reactor, new_request_opt)
             end
 
-        fun process_add_write_file_request reactor name fd on_error callback =
+        fun process_add_write_file_request reactor name fd on_error rd_bufsz rd_lwm callback =
             let
-                val _ = ReactorRequest.add_write_file reactor name fd on_error
+                val _ = ReactorRequest.add_write_file reactor name fd on_error rd_bufsz rd_lwm
                 val (new_state, new_request_opt) = callback (ReactorType.get_state reactor)
             in
                 ReactorType.set_state reactor new_state;
@@ -640,7 +640,7 @@ struct
               | Some (AddWriteFile name fd on_error rd_bufsz rd_lwm callback error_callback) =>
                     let
                         val (new_reactor, new_request_opt) = 
-                            process_add_write_file_request reactor name fd on_error callback
+                            process_add_write_file_request reactor name fd on_error rd_bufsz rd_lwm callback
                         handle
                             ReactorSystemError errno => process_error reactor error_callback errno
                           | ReactorBadArgumentError => process_error reactor error_callback ~10
