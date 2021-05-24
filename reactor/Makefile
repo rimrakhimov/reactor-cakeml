@@ -40,6 +40,7 @@ FFI_SYSTEM_CALLS_LIST = $(FFI_SYSTEM_CALLS_PATH)/MarshallingHelp.sml \
 							$(FFI_SYSTEM_CALLS_PATH)/epoll/EpollOpCode.sml \
 							$(FFI_SYSTEM_CALLS_PATH)/epoll/EpollEvent.sml \
 							$(FFI_SYSTEM_CALLS_PATH)/epoll/Epoll.sml \
+							$(FFI_SYSTEM_CALLS_PATH)/Socket.sml \
 							$(FFI_SYSTEM_CALLS_PATH)/Timer.sml \
 							$(FFI_SYSTEM_CALLS_PATH)/Timestamp.sml
 
@@ -57,6 +58,9 @@ timestamp_ffi.o: $(FFI_SYSTEM_CALLS_PATH)/ffi/timestamp.c
 timer_ffi.o: $(FFI_SYSTEM_CALLS_PATH)/ffi/timer.c
 	$(CC) $(CFLAGS) -o $@ -c $^
 
+socket_ffi.o: $(FFI_SYSTEM_CALLS_PATH)/ffi/socket.c
+	$(CC) $(CFLAGS) -o $@ -c $^
+
 epoll_ffi.o: $(FFI_SYSTEM_CALLS_PATH)/ffi/epoll.c
 	$(CC) $(CFLAGS) -o $@ -c $^
 
@@ -69,7 +73,7 @@ errno_ffi.o: $(FFI_SYSTEM_CALLS_PATH)/ffi/errno.c
 basis_ffi.o: $(BASIS)
 	$(CC) $(CFLAGS) -c $(BASIS)
 
-Reactor.cake: Reactor.cake.S basis_ffi.o errno_ffi.o fd_ffi.o epoll_ffi.o timer_ffi.o timestamp_ffi.o
+Reactor.cake: Reactor.cake.S basis_ffi.o errno_ffi.o fd_ffi.o epoll_ffi.o socket_ffi.o timer_ffi.o timestamp_ffi.o
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $^
 
 Reactor.cake.S: Reactor.cake.sml
@@ -80,9 +84,9 @@ Reactor.cake.sml: $(UTILS_LIST) $(BUFFER_LIST) $(LOGGER_LIST) $(FFI_SYSTEM_CALLS
 
 clean: 
 	$(RM) Reactor.cake Reactor.cake.S Reactor.cake.sml basis_ffi.o \
-		errno_ffi.o fd_ffi.o epoll_ffi.o timer_ffi.o \
+		errno_ffi.o fd_ffi.o epoll_ffi.o socket_ffi.o timer_ffi.o \
 		timestamp_ffi.o
 
 .INTERMEDIATE: Reactor.cake.S Reactor.cake.sml basis_ffi.o \
-		errno_ffi.o fd_ffi.o epoll_ffi.o timer_ffi.o \
+		errno_ffi.o fd_ffi.o epoll_ffi.o socket_ffi.o timer_ffi.o \
 		timestamp_ffi.o

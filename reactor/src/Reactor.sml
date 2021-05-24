@@ -258,10 +258,306 @@ struct
             ReactorType.set_is_closed reactor True;
             Logger.info logger "Reactor.clear: reactor cleared"
         end
+
+    (**
+     *  Validates that the creration of the buffer with specified
+     *  size and lower watermark arguments is valid.
+     *
+     *  @param logger `logger`: a logger that should be used to journal errors.
+     *  @param a_where `string`: a name o
+     *)
+    fun validate_buffer_args logger (a_where : string) (name : string) 
+            (bufsz : int) (lwm : int) (zero_allowed : bool) = (
+        (* Check the common preconditions. *)
+        if (bufsz < 0) orelse (lwm < 0) orelse (lwm > bufsz)
+        then (
+            Logger.error
+                logger
+                ("Reactor." ^ a_where ^ ": Name=" ^ name ^
+                ". Invalid BuffSz or LowWaterMark." ^
+                " Buffsz=" ^ Int.toString bufsz ^
+                ", LowWaterMark=" ^ Int.toString lwm ^ ".");
+            raise ReactorBadArgumentError
+        ) else ();
+
+        (* If buffer size should be positive, check that condition too. *)
+        if (not zero_allowed) andalso (bufsz = 0)
+        then (
+            Logger.error
+                logger
+                ("Reactor." ^ a_where ^ ": Name=" ^ name ^
+                ". Buffer must not be 0-size.");
+            raise ReactorBadArgumentError
+        ) else ()
+    )
 end
 
 structure ReactorRequest = 
 struct
+    (**
+     *  Assigns the address to the socket referred to by the file descriptor.
+     *)
+    fun bind logger (a_where : string) (fd : int) (address : in_addr) (port : int) = (
+        Socket.bind fd address port
+        handle FFIFailure => (
+            ReactorPrivate.raise_reactor_system_error (fn errno => 
+                Logger.error
+                    logger
+                    ("Reactor." ^ a_where ^ ": FD=" ^ Int.toString fd ^
+                     ". Binding failed with Error=" ^ Int.toString errno ^ ".")
+            ) None
+        );
+        Logger.info 
+            logger 
+            ("Reactor." ^ a_where ^ ": FD=" ^ Int.toString fd ^
+             ". Binded to Addr=\"" ^ InAddr.to_string address ^ "\"" ^ 
+             ", Port=" ^ Int.toString port ^ ".")
+    )
+
+    (**
+     *  Just a wrapper under the Socket.create () function,
+     *  that logs occurring events.
+     *)
+    fun create_socket logger (a_where : string) (name : string) =
+        let
+            val fd = Socket.create ()
+            handle FFIFailure => (
+                ReactorPrivate.raise_reactor_system_error (fn errno => (
+                    Logger.error
+                        logger
+                        ("Reactor." ^ a_where ^ ": create_socket() failed with Error=" ^
+                         Int.toString errno ^ ". Name=" ^ name ^ ".")
+                )) None
+            )
+        in
+            Logger.info
+                logger
+                ("Reactor." ^ a_where ^": socket created at FD=" ^ Int.toString fd ^
+                 ". Name=" ^ name ^ ".");
+            fd
+        end
+
+    local
+        (**
+         *  Creates a new socket and set it up with all predefined
+         *  parameters.
+         *
+         *  @param logger `logger`
+         *  @param a_where `string`: a public function that called us.
+         *  @param name `string`: name of the socket provided by the user.
+         *      Is used while logging errors and other infos.
+         *
+         *  @returns `int`: a file descriptor refferring to created socket.
+         *
+         *  @raises `ReactorSystemError` if any of fFFI calls fails.
+         *)
+        fun create_and_setup_data_stream logger (a_where : string) (name : string) (address_opt : in_addr option) =
+            let
+                val fd = create_socket logger a_where name
+            in
+                case address_opt of
+                    None => ()
+                  | Some address => bind logger a_where fd address 0;
+                
+                (* VERY IMPORTANT: Disable the Nagle algorithm on this socket. *)
+                Socket.set_tcp_nodelay fd True
+                handle FFIFailure => (
+                    ReactorPrivate.raise_reactor_system_error (fn errno => 
+                        Logger.error
+                            logger
+                            ("Reactor." ^ a_where ^ ": FD=" ^ Int.toString fd ^
+                             ". Could not set TCP_NODELAY with Error=" ^ 
+                             Int.toString errno ^ ".")
+                    ) None
+                );
+
+                (** 
+                 *  Set the Keep-Alive mode on the socket, with 1-second intervals:
+                 *  ----------------------------------------------------------------------- *
+                 *  5 missed acks will indicated a disconnect. This is required in order to
+                 *  detect stale connections as early as possible: HeartBeats could also be
+                 *  used to that end, but with much longer latency (eg minutes). 
+                 *)
+                Socket.set_so_keepalive fd True
+                handle FFIFailure => (
+                    ReactorPrivate.raise_reactor_system_error (fn errno => 
+                        Logger.error
+                            logger
+                            ("Reactor." ^ a_where ^ ": FD=" ^ Int.toString fd ^
+                             ". Could not set SO_KEEPALIVE with Error=" ^
+                             Int.toString errno ^ ".")
+                    ) None
+                );
+
+                (* Detailed config of TCP_KEEPALIVE option. *)
+                Socket.set_tcp_keepidle fd 1
+                handle FFIFailure => (
+                    ReactorPrivate.raise_reactor_system_error (fn errno => 
+                        Logger.error
+                            logger
+                            ("Reactor." ^ a_where ^ ": FD=" ^ Int.toString fd ^
+                             ". Could not set TCP_KEEPIDLE with Error=" ^
+                             Int.toString errno ^ ".")
+                    ) None
+                );
+                Socket.set_tcp_keepintvl fd 1
+                handle FFIFailure => (
+                    ReactorPrivate.raise_reactor_system_error (fn errno => 
+                        Logger.error
+                            logger
+                            ("Reactor." ^ a_where ^ ": FD=" ^ Int.toString fd ^
+                             ". Could not set TCP_KEEPINTVL with Error=" ^
+                             Int.toString errno ^ ".")
+                    ) None
+                );
+                Socket.set_tcp_keepcnt fd 5
+                handle FFIFailure => (
+                    ReactorPrivate.raise_reactor_system_error (fn errno => 
+                        Logger.error
+                            logger
+                            ("Reactor." ^ a_where ^ ": FD=" ^ Int.toString fd ^
+                             ". Could not set TCP_KEEPCNT with Error=" ^
+                             Int.toString errno ^ ".")
+                    ) None
+                );
+                fd
+            end
+
+        (**
+         *  Internal function that creates events_mask and
+         *  specified fd_info into the reactor.
+         *)
+        fun add_data_stream 
+            reactor (a_where : string) fd_info (is_read : bool) (is_write : bool) =
+        let 
+            (* Create the events mask *)
+            val events_mask = EpollEventsMask.from_list [Epollet, Epollrdhup]
+            val events_mask = if is_read then EpollEventsMask.add events_mask Epollin else events_mask
+            val events_mask = if is_write then EpollEventsMask.add events_mask Epollout else events_mask
+        in
+            ReactorPrivate.add_to_epoll reactor a_where fd_info events_mask True
+        end
+    in
+        (*
+         *  Creates a new read data stream with specified parameters and adds it into the reactor.
+         *
+         *  @param reactor `'a reactor`.
+         *  @param name `string`: a name that will be referring to the created data stream.
+         *  @param on_read `'a read_handler`: a callback function called when new
+         *      data are read from the data stream.
+         *  @param on_connect_opt `'a connect_handler option`: if provided, the function
+         *      is called when the socket descriptor reffers to is connected to another peer.
+         *  @param on_error `'a reactor err_handler`
+         *  @param rd_bufsz `int`: a size of the buffer corresponding to the descriptor.
+         *  @param rd_lwm `int`: lower watermark that the buffer should have.
+         *  @param address_opt `in_addr option`: if provided, specifies an IPv4 address 
+         *      of the interface the data stream should be binded to.
+         *)
+        fun add_read_data_stream 
+                reactor name on_read on_connect_opt on_error rd_bufsz rd_lwm address_opt =
+            let
+                val logger = ReactorType.get_logger reactor
+                val a_where = "add_read_data_stream"
+                
+                (* Validate arguments before continuing. May raise `ReactorBadArgumentError`
+                 * if corresponding arguments are non-valid. *)
+                val _ = ReactorPrivate.validate_buffer_args logger a_where name rd_bufsz rd_lwm False
+
+                (* Create a descriptor and set it up. *)
+                val fd = create_and_setup_data_stream logger a_where name address_opt
+
+                (* In theory could raise `IOBufferLowWatermarkTooHigh` exception
+                 * but would not, as we verified that watermark is not greater
+                 * than the buffer size. *)
+                val rd_buff = IOBuffer.init rd_bufsz rd_lwm
+                val fd_info = 
+                    ReadDataStreamFdInfo name fd on_read on_connect_opt on_error rd_buff False False
+            in
+                add_data_stream reactor a_where fd_info True False;
+                fd
+            end
+        
+        (*
+         *  Creates a new write data stream with specified parameters and adds it into the reactor.
+         *
+         *  @param reactor `'a reactor`.
+         *  @param name `string`: a name that will be referring to the created data stream.
+         *  @param on_connect_opt `'a connect_handler option`: if provided, the function
+         *      is called when the socket descriptor reffers to is connected to another peer.
+         *  @param on_error `'a reactor err_handler`
+         *  @param wr_bufsz `int`: a size of the buffer corresponding to the descriptor.
+         *  @param wr_lwm `int`: lower watermark that the buffer should have.
+         *  @param address_opt `in_addr option`: if provided, specifies an IPv4 address 
+         *      of the interface the data stream should be binded to.
+         *)
+        fun add_write_data_stream 
+                reactor name on_connect_opt on_error wr_bufsz wr_lwm address_opt =
+            let
+                val logger = ReactorType.get_logger reactor
+                val a_where = "add_write_data_stream"
+                
+                (* Validate arguments before continuing. May raise `ReactorBadArgumentError`
+                 * if corresponding arguments are non-valid. *)
+                val _ = ReactorPrivate.validate_buffer_args logger a_where name wr_bufsz wr_lwm True
+
+                (* Create a descriptor and set it up. *)
+                val fd = create_and_setup_data_stream logger a_where name address_opt
+
+                (* In theory could raise `IOBufferLowWatermarkTooHigh` exception
+                 * but would not, as we verified that watermark is not greater
+                 * than the buffer size. *)
+                val wr_buff = IOBuffer.init wr_bufsz wr_lwm
+                val fd_info = 
+                    WriteDataStreamFdInfo name fd on_connect_opt on_error wr_buff False False
+            in
+                add_data_stream reactor a_where fd_info False True;
+                fd
+            end
+
+        (*
+         *  Creates a new read write data stream with specified parameters and adds it into the reactor.
+         *
+         *  @param reactor `'a reactor`.
+         *  @param name `string`: a name that will be referring to the created data stream.
+         *  @param on_read `'a read_handler`: a callback function called when new
+         *      data are read from the data stream.
+         *  @param on_connect_opt `'a connect_handler option`: if provided, the function
+         *      is called when the socket descriptor reffers to is connected to another peer.
+         *  @param on_error `'a reactor err_handler`
+         *  @param rd_bufsz `int`: a size of the read buffer corresponding to the descriptor.
+         *  @param rd_lwm `int`: lower watermark that the read buffer should have.
+         *  @param wr_bufsz `int`: a size of the write buffer corresponding to the descriptor.
+         *  @param wr_lwm `int`: lower watermark that the write buffer should have.
+         *  @param address_opt `in_addr option`: if provided, specifies an IPv4 address 
+         *      of the interface the data stream should be binded to.
+         *)
+        fun add_read_write_data_stream 
+                reactor name on_read on_connect_opt on_error rd_bufsz rd_lwm wr_bufsz wr_lwm address_opt =
+            let
+                val logger = ReactorType.get_logger reactor
+                val a_where = "add_read_write_data_stream"
+                
+                (* Validate arguments before continuing. May raise `ReactorBadArgumentError`
+                 * if corresponding arguments are non-valid. *)
+                val _ = ReactorPrivate.validate_buffer_args logger a_where name rd_bufsz rd_lwm False
+                val _ = ReactorPrivate.validate_buffer_args logger a_where name wr_bufsz wr_lwm True
+
+                (* Create a descriptor and set it up. *)
+                val fd = create_and_setup_data_stream logger a_where name address_opt
+
+                (* In theory could raise `IOBufferLowWatermarkTooHigh` exception
+                 * but would not, as we verified that watermark is not greater
+                 * than the buffer size. *)
+                val rd_buff = IOBuffer.init rd_bufsz rd_lwm
+                val wr_buff = IOBuffer.init wr_bufsz wr_lwm
+                val fd_info = 
+                    ReadWriteDataStreamFdInfo name fd on_read on_connect_opt on_error rd_buff wr_buff False False
+            in
+                add_data_stream reactor a_where fd_info True True;
+                fd
+            end
+    end
+
     (*
      *  Creates a new timer with specified parameters and adds it into the reactor.
      *
@@ -400,31 +696,6 @@ struct
         fun add_file reactor (name : string) (fd : int) on_read_opt on_error
                 (bufsz : int) (lwm : int) =
             let
-                fun validate_args logger (a_where : string) (name : string) 
-                        (bufsz : int) (lwm : int) (zero_allowed : bool) = (
-                    (* Check the common preconditions. *)
-                    if (bufsz < 0) orelse (lwm < 0) orelse (lwm > bufsz)
-                    then (
-                        Logger.error
-                            logger
-                            ("Reactor." ^ a_where ^ ": Name=" ^ name ^
-                            ". Invalid BuffSz or LowWaterMark." ^
-                            " Buffsz=" ^ Int.toString bufsz ^
-                            ", LowWaterMark=" ^ Int.toString lwm ^ ".");
-                        raise ReactorBadArgumentError
-                    ) else ();
-
-                    (* If buffer size should be positive, check that condition too. *)
-                    if (not zero_allowed) andalso (bufsz = 0)
-                    then (
-                        Logger.error
-                            logger
-                            ("Reactor." ^ a_where ^ ": Name=" ^ name ^
-                            ". Buffer must not be 0-size.");
-                        raise ReactorBadArgumentError
-                    ) else ()
-                )
-
                 (* If there is an read handler, then we deal with a read file,
                  * otherwise we deal with write file. *)
                 val is_read = Option.isSome on_read_opt
@@ -435,8 +706,9 @@ struct
 
                 val logger = ReactorType.get_logger reactor
             in
-                (* Validate arguments before continuing *)
-                validate_args logger a_where name bufsz lwm zero_allowed;
+                (* Validate arguments before continuing. May raise `ReactorBadArgumentError`
+                 * if corresponding arguments are non-valid. *)
+                ReactorPrivate.validate_buffer_args logger a_where name bufsz lwm zero_allowed;
 
                 (* IMPORTANT: the descriptor may be created blocking. Thus, explicitly 
                  * set the descriptor into non-blocking mode, before using it in the reactor. *)
@@ -595,6 +867,39 @@ struct
                 (reactor, new_request_opt)
             end
 
+        fun process_add_read_data_stream_request 
+                reactor name on_read on_connect_opt on_error rd_bufsz rd_lwm in_addr_opt callback =
+            let
+                val fd = ReactorRequest.add_read_data_stream 
+                    reactor name on_read on_connect_opt on_error rd_bufsz rd_lwm in_addr_opt
+                val (new_state, new_request_opt) = callback (ReactorType.get_state reactor) fd
+            in
+                ReactorType.set_state reactor new_state;
+                (reactor, new_request_opt)
+            end
+        
+        fun process_add_write_data_stream_request 
+                reactor name on_connect_opt on_error wr_bufsz wr_lwm in_addr_opt callback =
+            let
+                val fd = ReactorRequest.add_write_data_stream 
+                    reactor name on_connect_opt on_error wr_bufsz wr_lwm in_addr_opt
+                val (new_state, new_request_opt) = callback (ReactorType.get_state reactor) fd
+            in
+                ReactorType.set_state reactor new_state;
+                (reactor, new_request_opt)
+            end
+
+        fun process_add_read_write_data_stream_request 
+                reactor name on_read on_connect_opt on_error rd_bufsz rd_lwm wr_bufsz wr_lwm in_addr_opt callback =
+            let
+                val fd = ReactorRequest.add_read_write_data_stream 
+                    reactor name on_read on_connect_opt on_error rd_bufsz rd_lwm wr_bufsz wr_lwm in_addr_opt
+                val (new_state, new_request_opt) = callback (ReactorType.get_state reactor) fd
+            in
+                ReactorType.set_state reactor new_state;
+                (reactor, new_request_opt)
+            end
+
         fun process_add_timer_request reactor name initial_mcsec period_mcsec on_timer on_err callback =
             let
                 val fd = ReactorRequest.add_timer reactor name initial_mcsec period_mcsec on_timer on_err
@@ -655,6 +960,42 @@ struct
         fun handle_function_request reactor request_opt =
             case request_opt of
                 None => reactor
+              | Some (AddReadDataStream name on_read on_connect_opt on_error
+                        rd_bufsz rd_lwm in_addr_opt callback error_callback) =>
+                    let
+                      val (new_reactor, new_request_opt) = 
+                            process_add_read_data_stream_request 
+                                reactor name on_read on_connect_opt on_error rd_bufsz rd_lwm in_addr_opt callback
+                        handle 
+                            ReactorSystemError errno => process_error reactor error_callback errno
+                          | ReactorBadArgumentError => process_error reactor error_callback ~10
+                    in
+                        handle_function_request new_reactor new_request_opt
+                    end
+              | Some (AddWriteDataStream name on_connect_opt on_error wr_bufsz wr_lwm 
+                        in_addr_opt callback error_callback) =>
+                    let
+                      val (new_reactor, new_request_opt) = 
+                            process_add_write_data_stream_request 
+                                reactor name on_connect_opt on_error wr_bufsz wr_lwm in_addr_opt callback
+                        handle 
+                            ReactorSystemError errno => process_error reactor error_callback errno
+                          | ReactorBadArgumentError => process_error reactor error_callback ~10
+                    in
+                        handle_function_request new_reactor new_request_opt
+                    end
+              | Some (AddReadWriteDataStream name on_read on_connect_opt on_error 
+                        rd_bufsz rd_lwm wr_bufsz wr_lwm in_addr_opt callback error_callback) =>
+                    let
+                      val (new_reactor, new_request_opt) = 
+                            process_add_read_write_data_stream_request 
+                                reactor name on_read on_connect_opt on_error rd_bufsz rd_lwm wr_bufsz wr_lwm in_addr_opt callback
+                        handle 
+                            ReactorSystemError errno => process_error reactor error_callback errno
+                          | ReactorBadArgumentError => process_error reactor error_callback ~10
+                    in
+                        handle_function_request new_reactor new_request_opt
+                    end
               | Some (AddTimer name initial_mcsec period_mcsec on_timer on_error callback error_callback) =>
                     let
                         val (new_reactor, new_request_opt) = 

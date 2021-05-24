@@ -1,5 +1,20 @@
 datatype 'a reactor_function_request = 
-    AddTimer string int int
+    AddReadDataStream string 
+        ('a read_handler) ('a connect_handler option)
+        ('a err_handler) int int (in_addr option)
+        ('a -> int -> 'a * 'a reactor_function_request option)
+        ('a -> int -> 'a * 'a reactor_function_request option)
+  | AddWriteDataStream string
+        ('a connect_handler option) ('a err_handler)
+        int int (in_addr option)
+        ('a -> int -> 'a * 'a reactor_function_request option)
+        ('a -> int -> 'a * 'a reactor_function_request option)
+  | AddReadWriteDataStream string
+        ('a read_handler) ('a connect_handler option)
+        ('a err_handler) int int int int (in_addr option)
+        ('a -> int -> 'a * 'a reactor_function_request option)
+        ('a -> int -> 'a * 'a reactor_function_request option)
+  | AddTimer string int int
         ('a timer_handler)
         ('a err_handler)
         ('a -> int -> 'a * 'a reactor_function_request option)
