@@ -3,6 +3,9 @@
 
 #include <stdint.h>
 
+void int_to_byte2(int i, unsigned char *b);
+int byte2_to_int(unsigned char *b);
+
 void int_to_byte8(int i, unsigned char *b);
 int byte8_to_int(unsigned char *b);
 
