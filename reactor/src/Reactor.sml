@@ -1010,12 +1010,25 @@ struct
                 (reactor, new_request_opt)
             end
 
-        fun process_write_request reactor fd data =
+        (**
+         *  IMPORTANT: returning from Write request does not mean, that
+         *  that data has been actually written neither into the sending wires,
+         *  nor even into the kernel buffer. Some data may remain unsent and stored
+         *  into the FDInfo buffer to be sent later by `DelayedSend`.
+         *  Thus, the user should not remove the descriptor, as a callback.
+         *
+         *  The callback functionality is added for the case if more than 1 write
+         *  operation should be performed in a row to several different descriptors.
+         *)
+        fun process_write_request reactor fd data callback =
             let
                 val _ = ReactorRequest.write reactor fd data
                 handle IOBufferOverflow => raise ReactorSystemError (~1)
+
+                val (new_state, new_request_opt) = callback (ReactorType.get_state reactor)
             in
-                (reactor, None)
+                ReactorType.set_state reactor new_state;
+                (reactor, new_request_opt)
             end
 
         fun process_remove_request reactor fd callback =
@@ -1121,10 +1134,10 @@ struct
                     in
                         handle_function_request new_reactor new_request_opt
                     end
-              | Some (Write fd data error_callback) =>
+              | Some (Write fd data callback error_callback) =>
                     let
                         val (new_reactor, new_request_opt) = 
-                            process_write_request reactor fd data 
+                            process_write_request reactor fd data callback
                         handle
                             ReactorSystemError errno => process_error reactor error_callback errno
                           | ReactorBadArgumentError => process_error reactor error_callback ~10
