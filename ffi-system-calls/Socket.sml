@@ -78,17 +78,17 @@ struct
      *
      *  @param fd `int`: the file descriptor referring to a socket
      *      to be listened.
-     *  @param max_conn `int`: the maximum length to which the
+     *  @param backlog `int`: the maximum length to which the
      *      queue of pending connections may grow.
      *
      *  @raises `FFIFailure` if `listen` syscall fails.
      *)
-    fun listen (fd : int) (max_conn : int) =
+    fun listen (fd : int) (backlog : int) =
         let
             val fd_bytes = MarshallingHelp.n2w4 fd
-            val max_conn_bytes = MarshallingHelp.n2w4 max_conn
+            val backlog_bytes = MarshallingHelp.n2w4 backlog
 
-            val inbuf = ByteArray.concat_all [fd_bytes, max_conn_bytes]
+            val inbuf = ByteArray.concat_all [fd_bytes, backlog_bytes]
             val outbuf = ByteArray.empty 1
         in
             #(socket_listen) (ByteArray.to_string inbuf) outbuf;
@@ -242,4 +242,46 @@ struct
             FFIHelper.validate_status outbuf;
             ()
         end
+
+    (**
+     *  Enables or disables SO_REUSEADDR option for the specified socket.
+     *  Option if set, indicates that the rules used in validating addresses
+     *  supplied in a bind(2) call should allow reuse of local addresses.
+     *
+     *  @param fd `int`: a file descriptor that refers to the socket.
+     *  @param to_set `bool`: if True, the option is enabled; if False,
+     *      the option is disabled.
+     *
+     *  @raises `FFIFailure` if `setsockopt` syscall fails.
+     *)
+    fun set_so_reuseaddr (fd : int) (to_set : bool) =
+        let
+            val fd_bytes = MarshallingHelp.n2w4 fd
+            val to_set_bytes = Word8Array.array 1 (Word8.fromInt (if to_set then 1 else 0))
+            
+            val inbuf = ByteArray.concat_all [fd_bytes, to_set_bytes]
+            val outbuf = ByteArray.empty 1
+        in
+            #(socket_set_so_reuseaddr) (ByteArray.to_string inbuf) outbuf;
+            FFIHelper.validate_status outbuf;
+            ()
+        end
 end
+
+(* val epoll_fd = Epoll.create ()
+
+val listen_fd = Socket.create ()
+val _ = Socket.bind listen_fd (InAddr.from_string "127.0.0.1") 12347
+val _ = Socket.listen listen_fd 100
+
+val fd = Socket.create()
+val _ = Epoll.ctl EpollCtlAdd epoll_fd fd (EpollEventsMask.from_list [Epollet, Epollrdhup, Epollin, Epollout])
+val _ = Socket.connect fd (InAddr.from_string "127.0.0.1") 12347
+handle FFIEagain => print "\n\n===SOCKET_CONNECT: FFI_EAGAIN===\n\n"
+
+val _ = print "\n\n===HELLO_1===\n\n"
+val _ = Socket.accept listen_fd
+val _ = print "\n\n===HELLO_2===\n\n"
+val epoll_event_list = Epoll.wait epoll_fd 1 (~1)
+val ev = List.hd epoll_event_list
+val _ = print ("\n\n===EPOLL_EVENT: " ^ EpollEvent.to_string ev ^ "===\n\n") *)

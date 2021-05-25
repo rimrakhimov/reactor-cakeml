@@ -558,6 +558,71 @@ struct
             end
     end
 
+    (**
+     *  Creates a new acceptance socket and add it into the reactor.
+     *
+     *  @param reactor `'a reactor`.
+     *  @param name `string`: a name that will be referring to the created acceptor.
+     *  @param on_accept `'a accept_handler`: a callback function that should be
+     *      called when new connection is accepted.
+     *  @param on_error `'a err_handler`: a callback function that should be called
+     *      if any error will be obtained when accepting new connections.
+     *  @param sockaddr `sockaddr_in`: an IPv4 address and port number the 
+     *      listening socket should be binded to.
+     *  @param backlog `int`: the maximum length to which the queue of
+     *      pending connections for the socket may grow.
+     *
+     *  @returns `int`: a file descriptor referring to created listening socket.
+     *
+     *  @raises `ReactorSystemError` if any applied syscall fails.
+     *)
+    fun add_acceptor reactor name on_accept on_error sockaddr backlog = 
+        let
+            val logger = ReactorType.get_logger reactor
+            val a_where = "add_acceptor"
+
+            val fd = create_socket logger a_where name
+            val (SockAddrIn in_addr in_port) = sockaddr
+
+            val fd_info = AcceptorFdInfo name fd on_accept on_error
+            val events_mask = EpollEventsMask.from_list [Epollet, Epollin]
+        in
+            (* Allow to reuse local addresses before binding the socket. *)
+            Socket.set_so_reuseaddr fd True
+            handle FFIFailure => (
+                ReactorPrivate.raise_reactor_system_error (fn errno => 
+                    Logger.error
+                        logger
+                        ("Reactor." ^ a_where ^ ": FD=" ^ Int.toString fd ^
+                         ". Could not set SO_REUSEADDR with Error=" ^
+                         Int.toString errno ^ ".")
+                ) None
+            );
+            
+            (* Bind the socket to the specified address *)
+            bind logger a_where fd in_addr in_port;
+
+            (* Make the socket listening. *)
+            Socket.listen fd backlog
+            handle FFIFailure => (
+                ReactorPrivate.raise_reactor_system_error (fn errno => 
+                    Logger.error
+                        logger
+                        ("Reactor." ^ a_where ^ ": FD=" ^ Int.toString fd ^
+                         ". listen() failed with Error=" ^
+                         Int.toString errno ^ ".")
+                ) None
+            );
+            Logger.info
+                logger
+                ("Reactor." ^ a_where ^ ": FD=" ^ Int.toString fd ^
+                 ". Start listening.");
+
+            (* Add the created listening socket into the epoll mechanism. *)
+            ReactorPrivate.add_to_epoll reactor a_where fd_info events_mask True;
+            fd
+        end
+
     (*
      *  Creates a new timer with specified parameters and adds it into the reactor.
      *
@@ -900,6 +965,15 @@ struct
                 (reactor, new_request_opt)
             end
 
+        fun process_add_acceptor_request reactor name on_accept on_error sockaddr backlog callback =
+            let
+                val fd = ReactorRequest.add_acceptor reactor name on_accept on_error sockaddr backlog
+                val (new_state, new_request_opt) = callback (ReactorType.get_state reactor) fd
+            in
+                ReactorType.set_state reactor new_state;
+                (reactor, new_request_opt)
+            end
+
         fun process_add_timer_request reactor name initial_mcsec period_mcsec on_timer on_err callback =
             let
                 val fd = ReactorRequest.add_timer reactor name initial_mcsec period_mcsec on_timer on_err
@@ -987,9 +1061,20 @@ struct
               | Some (AddReadWriteDataStream name on_read on_connect_opt on_error 
                         rd_bufsz rd_lwm wr_bufsz wr_lwm in_addr_opt callback error_callback) =>
                     let
-                      val (new_reactor, new_request_opt) = 
+                        val (new_reactor, new_request_opt) = 
                             process_add_read_write_data_stream_request 
                                 reactor name on_read on_connect_opt on_error rd_bufsz rd_lwm wr_bufsz wr_lwm in_addr_opt callback
+                        handle 
+                            ReactorSystemError errno => process_error reactor error_callback errno
+                          | ReactorBadArgumentError => process_error reactor error_callback ~10
+                    in
+                        handle_function_request new_reactor new_request_opt
+                    end
+              | Some (AddAcceptor name on_accept on_error sockaddr backlog callback error_callback) =>
+                    let
+                        val (new_reactor, new_request_opt) = 
+                            process_add_acceptor_request 
+                                reactor name on_accept on_error sockaddr backlog callback
                         handle 
                             ReactorSystemError errno => process_error reactor error_callback errno
                           | ReactorBadArgumentError => process_error reactor error_callback ~10
@@ -1173,6 +1258,80 @@ struct
               | Error IOBufferOverflow =>
                     handle_io_error reactor "delayed_write" fd_info (Some (~1)) "write() failed with Buffer Overflow"
         end
+
+
+    (**
+     *  Internal function that handles new pending connection events at
+     *  listening sockets. May terminate the reactor, if any error occurs
+     *  during accepting a new connection.
+     *)
+    fun handle_accept reactor fd_info (events_mask : epoll_events_mask) =
+        (**
+         *  For Acceptor sockets, we are only interested in Readability events; also
+         *  do NOT accept the connection if there was an EPoll-detected error on the
+         *  Acceptor socket (it's just safer to do it this way); any other events 
+         *  are silently ignored.
+         *)
+        if 
+            not (ReactorPrivate.is_readable events_mask) 
+                orelse 
+            ReactorPrivate.is_error events_mask
+        then
+            reactor
+        else
+            let
+                val logger = ReactorType.get_logger reactor
+
+                val acceptor_fd = FdInfoType.get_fd fd_info
+                val (AcceptHandler accept_handler) = FdInfoType.get_accept_handler fd_info
+
+                fun accept_until_eagain r =
+                    (* Acceptor can be removed from the reactor as a result of
+                     * accept_handler callback. Due to that reason we have to ensure
+                     * that the acceptor descriptor still exists in the reactor.
+                     * If it has been deleted, we break from the accepting cycle. *)
+                    if 
+                        not (ReactorType.has_fd_info r acceptor_fd)
+                    then 
+                        r
+                    else
+                        let
+                            val res = Ok (Socket.accept acceptor_fd)
+                            handle exn => Error exn
+                        in
+                            case res of
+                                Ok (client_fd, client_address, client_port) => (
+                                    Logger.info 
+                                        logger
+                                        ("Reactor.handle_accept: FDListening=" ^ Int.toString acceptor_fd ^ 
+                                         ". A new connection is accepted at FD=" ^ Int.toString client_fd ^
+                                         ", from Address=" ^ InAddr.to_string client_address ^
+                                         ", Port=" ^ Int.toString client_port ^ ".");
+                                    let
+                                        val (new_state, new_request_opt) = 
+                                            accept_handler (ReactorType.get_state r) acceptor_fd client_fd (SockAddrIn client_address client_port)
+                                    in
+                                        ReactorType.set_state r new_state;
+                                        accept_until_eagain (handle_function_request r new_request_opt)
+                                    end
+                                )
+                              | Error FFIEintr => 
+                                    (* Accepting call has been interrupted. Try again. *)
+                                    accept_until_eagain r
+                              | Error FFIEagain => 
+                                    (* No more connections in the pending queue. We can return now. *)
+                                    r
+                              | Error FFIFailure => (
+                                    (* Some unexpected error occurred while accepting a new connection.
+                                     * This is a serious error condition, and we should terminate the reactor.
+                                     *)
+                                    handle_critical_io_error 
+                                        r "handle_accept" fd_info None "accept() failed"
+                              )
+                        end
+            in
+                accept_until_eagain reactor
+            end
 
     fun handle_timer reactor fd_info (events_mask : epoll_events_mask) =
         (* In timer we are only interested in Readability events;
@@ -1367,7 +1526,10 @@ struct
                             let
                                 val new_reactor = 
                                     case fd_info of
-                                        (TimerFdInfo _ _ _ _ _) => 
+                                        (* (ReadDataStreamFdInfo _ _ _ _ _ _ _ _) => reactor *)
+                                        (AcceptorFdInfo _ _ _ _) =>
+                                            ReactorInternal.handle_accept reactor fd_info events_mask
+                                      | (TimerFdInfo _ _ _ _ _) => 
                                             ReactorInternal.handle_timer reactor fd_info events_mask
                                       | (ReadFileFdInfo _ _ _ _ _) => 
                                             ReactorInternal.handle_read_file reactor fd_info events_mask

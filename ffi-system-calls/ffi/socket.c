@@ -224,3 +224,19 @@ void ffisocket_set_tcp_keepcnt(unsigned char *c, long clen, unsigned char *a, lo
     else
         a[0] = FFI_SUCCESS;
 }
+
+// Sets SO_REUSEADDR option for the Socket.
+// INPUT:  4 bytes - socket descriptor, 1 byte - value to be set.
+// OUTPUT: 1 byte - result code.
+void ffisocket_set_so_reuseaddr(unsigned char *c, long clen, unsigned char *a, long alen) {
+    assert(clen == 5);
+    assert(alen == 1);
+
+    int c_fd = byte4_to_int(c);
+    int c_to_set = c[4];
+
+    if (setsockopt(c_fd, SOL_SOCKET, SO_REUSEADDR, &c_to_set, sizeof(c_to_set)) < 0)
+        a[0] = FFI_FAILURE;
+    else
+        a[0] = FFI_SUCCESS;
+}
