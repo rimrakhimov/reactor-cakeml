@@ -4,15 +4,27 @@ datatype 'a reactor_function_request =
         ('a err_handler) int int (in_addr option)
         ('a -> int -> 'a * 'a reactor_function_request option)
         ('a -> int -> 'a * 'a reactor_function_request option)
+  | AddExistingReadDataStream string int
+        ('a read_handler) ('a err_handler) int int
+        ('a -> 'a * 'a reactor_function_request option)
+        ('a -> int -> 'a * 'a reactor_function_request option)
   | AddWriteDataStream string
         ('a connect_handler option) ('a err_handler)
         int int (in_addr option)
         ('a -> int -> 'a * 'a reactor_function_request option)
         ('a -> int -> 'a * 'a reactor_function_request option)
+  | AddExistingWriteDataStream string int
+        ('a err_handler) int int
+        ('a -> 'a * 'a reactor_function_request option)
+        ('a -> int -> 'a * 'a reactor_function_request option)
   | AddReadWriteDataStream string
         ('a read_handler) ('a connect_handler option)
         ('a err_handler) int int int int (in_addr option)
         ('a -> int -> 'a * 'a reactor_function_request option)
+        ('a -> int -> 'a * 'a reactor_function_request option)
+  | AddExistingReadWriteDataStream string int
+        ('a read_handler) ('a err_handler) int int int int
+        ('a -> 'a * 'a reactor_function_request option)
         ('a -> int -> 'a * 'a reactor_function_request option)
   | Connect int sockaddr_in
         ('a -> 'a * 'a reactor_function_request option)
