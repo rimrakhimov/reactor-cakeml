@@ -63,7 +63,7 @@ struct
     fun has_fd_info reactor fd =
         Option.isSome (get_fd_info_opt reactor fd)
 
-    (* Adds a new fd_info into the reactor. *)
+    (* Adds a new fd_info into the reactor or updates the existing one. *)
     fun add_fd_info reactor fd_info =
         let
             val fd = FdInfoType.get_fd fd_info
@@ -559,6 +559,132 @@ struct
     end
 
     (**
+     *  Initializes a connection on a socket with specified peer address.
+     *
+     *  @param reactor `'a reactor`
+     *  @param fd `int`: a file descriptor referring to the socket.
+     *  @param sockaddr `sockaddr_in`: an address of the peer to initialize
+     *      connection to.
+     *)
+    fun connect reactor fd sockaddr =
+        let
+            val logger = ReactorType.get_logger reactor
+
+            val fd_info = 
+                case ReactorType.get_fd_info_opt reactor fd of
+                    Some fd_info => fd_info
+                  | None => (
+                        Logger.error
+                            logger
+                            ("Reactor.connect: FD=" ^ Int.toString fd ^
+                             ". The descriptor does not belong to the reactor.");
+                        raise ReactorBadArgumentError
+                  )
+
+            val (SockAddrIn address port) = sockaddr
+            (* Internal function that connects the socket, while ignoring
+             * interruption (EINTR) errors. `FFIEagain` and `FFIFailure` 
+             * exceptions are wrapped into Error type and returned. *)
+            fun internal () = (
+                Ok (Socket.connect fd address port)
+                handle 
+                    FFIEintr => internal ()
+                  | FFIEagain => Error FFIEagain
+                  | FFIFailure => Error FFIFailure
+
+            )
+        in
+            (* Validate that fd_info indeed corresponds to a data stream. *)
+            if not (
+                FdInfoType.is_read_data_stream fd_info
+                    orelse
+                FdInfoType.is_write_data_stream fd_info
+                    orelse
+                FdInfoType.is_read_write_data_stream fd_info
+            ) then (
+                Logger.error
+                    logger
+                    ("Reactor.connect: FD=" ^ Int.toString fd ^
+                     ". Corresponding fd_info is not a DataStream.");
+                raise ReactorBadArgumentError
+            ) else ();
+
+            (* We cannot perform repeated connection attempts, thus, verify
+             * that the connection is not establishing or has been established
+             * on the socket. *)
+            if (
+                FdInfoType.get_is_connecting_status fd_info 
+                    orelse 
+                FdInfoType.get_is_connected_status fd_info
+            ) then (
+                Logger.error
+                    logger
+                    ("Reactor.connect: FD=" ^ Int.toString fd ^ 
+                     ". Socket already connected, or connection is in progress.");
+                raise ReactorBadArgumentError
+            ) else ();
+
+            (*  IMPORTANT: if the FDInfo refers to Read only data stream, it will 
+             *  not have EPOLLOUT event specified. However, when connection terminates,
+             *  exactly this event will be emitted on the socket. Thus, we have to
+             *  add the EPOLLOUT event before trying to connect. On connection,
+             *  the event should be deleted from the set of events, descriptor is
+             *  waiting for.
+             *) 
+            if (FdInfoType.is_read_data_stream fd_info)
+            then (
+                let
+                    val epoll_fd = ReactorType.get_epoll_fd reactor
+                    val events_mask = EpollEventsMask.from_list [Epollet, Epollrdhup, Epollin, Epollout]
+                in
+                    Epoll.ctl EpollCtlMod epoll_fd fd events_mask
+                    handle FFIFailure => (
+                        ReactorPrivate.raise_reactor_system_error (fn errno => 
+                            Logger.error
+                                logger
+                                ("Reactor.connect: FD=" ^ Int.toString fd ^
+                                 ". Specifying EPOLLOUT event in the epoll for ReadDataStream" ^
+                                 " descriptor failed with Error=" ^ Int.toString errno ^ ".")
+                        ) None
+                    )
+                end
+            ) else ();
+
+            case internal () of
+                Ok () => (
+                    (* TCP Connect already succeeded (which is nearly impossible).
+                     * In that case we store connected status inside the FDInfo.
+                     * 
+                     * Likewise, it seems that we should call on_connect callback
+                     * function, but we do not do it for now. TODO. *)
+                    Logger.info
+                        logger
+                        ("Reactor.connect: FD=" ^ Int.toString fd ^
+                         ". TCP Connect Successful.");
+                    ReactorType.add_fd_info reactor (FdInfoType.set_is_connected_status fd_info True)
+                )
+              | Error FFIEagain => (
+                    (* It is a normal condition indicating that connection has
+                     * not been established immideately. We just store that 
+                     * information in the added FDInfo and return from the function. 
+                     *)
+                    Logger.info
+                        logger
+                        ("Reactor.connect: FD=" ^ Int.toString fd ^
+                         ". TCP Connection is in progress.");
+                    ReactorType.add_fd_info reactor (FdInfoType.set_is_connecting_status fd_info True)
+                )
+              | Error FFIFailure => (
+                    ReactorPrivate.raise_reactor_system_error (fn errno => 
+                        Logger.error
+                            logger
+                            ("Reactor.connect: FD=" ^ Int.toString fd ^ 
+                             ". connect() failed with Error=" ^ Int.toString errno ^ ".")
+                    ) None
+                )
+        end
+
+    (**
      *  Creates a new acceptance socket and add it into the reactor.
      *
      *  @param reactor `'a reactor`.
@@ -965,6 +1091,16 @@ struct
                 (reactor, new_request_opt)
             end
 
+        fun process_connect_request reactor fd sockaddr callback =
+            let
+                val _ = ReactorRequest.connect reactor fd sockaddr
+                val (new_state, new_request_opt) = callback (ReactorType.get_state reactor)
+            in
+                ReactorType.set_state reactor new_state;
+                (reactor, new_request_opt)
+            end
+
+
         fun process_add_acceptor_request reactor name on_accept on_error sockaddr backlog callback =
             let
                 val fd = ReactorRequest.add_acceptor reactor name on_accept on_error sockaddr backlog
@@ -1078,6 +1214,16 @@ struct
                             process_add_read_write_data_stream_request 
                                 reactor name on_read on_connect_opt on_error rd_bufsz rd_lwm wr_bufsz wr_lwm in_addr_opt callback
                         handle 
+                            ReactorSystemError errno => process_error reactor error_callback errno
+                          | ReactorBadArgumentError => process_error reactor error_callback ~10
+                    in
+                        handle_function_request new_reactor new_request_opt
+                    end
+              | Some (Connect fd sockaddr callback error_callback) =>
+                    let
+                        val (new_reactor, new_request_opt) = 
+                            process_connect_request reactor fd sockaddr callback
+                        handle
                             ReactorSystemError errno => process_error reactor error_callback errno
                           | ReactorBadArgumentError => process_error reactor error_callback ~10
                     in

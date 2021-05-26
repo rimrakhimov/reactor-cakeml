@@ -14,6 +14,9 @@ datatype 'a reactor_function_request =
         ('a err_handler) int int int int (in_addr option)
         ('a -> int -> 'a * 'a reactor_function_request option)
         ('a -> int -> 'a * 'a reactor_function_request option)
+  | Connect int sockaddr_in
+        ('a -> 'a * 'a reactor_function_request option)
+        ('a -> int -> 'a * 'a reactor_function_request option)
   | AddAcceptor string ('a accept_handler)
         ('a err_handler) (sockaddr_in) int
         ('a -> int -> 'a * 'a reactor_function_request option)
