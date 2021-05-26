@@ -51,7 +51,11 @@ void ffisocket_connect(unsigned char *c, long clen, unsigned char *a, long alen)
     if (connect(c_fd, (struct sockaddr *)&addr_to_connect, sizeof(addr_to_connect)) == 0) {
         a[0] = FFI_SUCCESS;
     } else {
-        if (errno == EAGAIN || errno == EINPROGRESS) {
+        /* For 'connect' sycall EAGAIN is an actual error, as it
+         * means that there are insufficient entries in the routing cache. 
+         * EINPROGRESS is Ok, meaning that connection cannot be established
+         * immediately, and is in progress. */
+        if (errno == EINPROGRESS) {
             a[0] = FFI_EAGAIN;
         } else if (errno == EINTR) {
             a[0] == FFI_EINTR;
