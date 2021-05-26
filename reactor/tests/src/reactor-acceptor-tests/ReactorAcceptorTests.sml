@@ -54,11 +54,10 @@ struct
 			(* The state before it was increased *)
 			Assert.assertEqualInt (conn_num - 1) state
 
-        val port_bytes = ByteArray.empty 2
-        val _ = Marshalling.n2w2 port port_bytes 0
-		val conn_num_bytes = MarshallingHelp.n2w4 conn_num
+		val inbuf = ByteArray.empty 6
+        val _ = Marshalling.n2w2 port inbuf 0
+		val _ = MarshallingHelp.n2w4 conn_num inbuf 2
 
-		val inbuf = ByteArray.concat_all [port_bytes, conn_num_bytes]
 		val outbuf = ByteArray.empty 0
 
 		fun add_acceptor_callback state fd = (

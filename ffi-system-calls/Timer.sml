@@ -31,11 +31,11 @@ struct
      *)
     fun set_time (fd : int) (initial : int) (period : int) =
         let
-            val fd_bytes = MarshallingHelp.n2w4 fd
-            val initial_bytes = MarshallingHelp.n2w8 initial
-            val period_bytes = MarshallingHelp.n2w8 period
+            val inbuf = ByteArray.empty 20
+            val _ = MarshallingHelp.n2w4 fd inbuf 0
+            val _ = MarshallingHelp.n2w8 initial inbuf 4
+            val _ = MarshallingHelp.n2w8 period inbuf 12
 
-            val inbuf = ByteArray.concat_all [fd_bytes, initial_bytes, period_bytes]
             val outbuf = ByteArray.empty 1
         in
             #(timer_set_time) (ByteArray.to_string inbuf) outbuf;

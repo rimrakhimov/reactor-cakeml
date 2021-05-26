@@ -55,7 +55,7 @@ TEST_UNIT_LIST = $(TEST_UNIT_PATH)/src/Assert.sml $(TEST_UNIT_PATH)/src/Test.sml
 					$(TEST_UNIT_PATH)/src/TextUITestRunner.sml
 
 TEST_LIST = src/reactor-acceptor-tests/ReactorAcceptorTests.sml \
-			# src/reactor-file-tests/ReactorFileTests.sml src/*Tests.sml
+			src/reactor-file-tests/ReactorFileTests.sml src/*Tests.sml
 
 .PHONY: all
 all: Tests.cake

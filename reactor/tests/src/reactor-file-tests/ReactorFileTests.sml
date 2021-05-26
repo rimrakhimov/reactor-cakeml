@@ -96,6 +96,8 @@ struct
 		end
 		fun on_timer state fd n_exp =
 		let
+			fun write_callback state = (state, None)
+
 			val n_send = fst state
 			val n_to_send = min 8 (String.size text - n_send)
 			
@@ -103,7 +105,7 @@ struct
 
 			val new_state = (n_send + n_to_send, snd state)
 
-			val write_request = Write write_fd data error_callback
+			val write_request = Write write_fd data write_callback error_callback
 		in
 			if n_to_send = 0
 			then 

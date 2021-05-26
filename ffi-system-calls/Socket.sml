@@ -34,12 +34,13 @@ struct
      *)
     fun connect (fd : int) (address : in_addr) (port : int) =
         let
-            val fd_bytes = MarshallingHelp.n2w4 fd
-            val port_bytes = ByteArray.empty 2
-            val _ = Marshalling.n2w2 port port_bytes 0
             val address_bytes = ByteArray.from_string (InAddr.to_string address)
 
-            val inbuf = ByteArray.concat_all [fd_bytes, port_bytes, address_bytes]
+            val inbuf = ByteArray.empty (4 + 2 + Word8Array.length address_bytes)
+            val _ = MarshallingHelp.n2w4 fd inbuf 0
+            val _ = Marshalling.n2w2 port inbuf 4
+            val _ = Word8Array.copy address_bytes 0 (Word8Array.length address_bytes) inbuf 6
+            
             val outbuf = ByteArray.empty 1
         in
             #(socket_connect) (ByteArray.to_string inbuf) outbuf;
@@ -59,12 +60,13 @@ struct
      *)
     fun bind (fd : int) (address : in_addr) (port : int) =
         let
-            val fd_bytes = MarshallingHelp.n2w4 fd
-            val port_bytes = ByteArray.empty 2
-            val _ = Marshalling.n2w2 port port_bytes 0
             val address_bytes = ByteArray.from_string (InAddr.to_string address)
 
-            val inbuf = ByteArray.concat_all [fd_bytes, port_bytes, address_bytes]
+            val inbuf = ByteArray.empty (4 + 2 + Word8Array.length address_bytes)
+            val _ = MarshallingHelp.n2w4 fd inbuf 0
+            val _ = Marshalling.n2w2 port inbuf 4
+            val _ = Word8Array.copy address_bytes 0 (Word8Array.length address_bytes) inbuf 6
+            
             val outbuf = ByteArray.empty 1
         in
             #(socket_bind) (ByteArray.to_string inbuf) outbuf;
@@ -85,10 +87,10 @@ struct
      *)
     fun listen (fd : int) (backlog : int) =
         let
-            val fd_bytes = MarshallingHelp.n2w4 fd
-            val backlog_bytes = MarshallingHelp.n2w4 backlog
+            val inbuf = ByteArray.empty 8
+            val _ = MarshallingHelp.n2w4 fd inbuf 0
+            val _ = MarshallingHelp.n2w4 backlog inbuf 4
 
-            val inbuf = ByteArray.concat_all [fd_bytes, backlog_bytes]
             val outbuf = ByteArray.empty 1
         in
             #(socket_listen) (ByteArray.to_string inbuf) outbuf;
@@ -112,7 +114,9 @@ struct
      *)
     fun accept (acceptor_fd : int) = 
         let
-            val inbuf = MarshallingHelp.n2w4 acceptor_fd
+            val inbuf = ByteArray.empty 4
+            val _ = MarshallingHelp.n2w4 acceptor_fd inbuf 0
+
             val outbuf = ByteArray.empty 23
         in
             #(socket_accept) (ByteArray.to_string inbuf) outbuf;
@@ -140,10 +144,10 @@ struct
      *)
     fun set_tcp_nodelay (fd : int) (to_set : bool) =
         let
-            val fd_bytes = MarshallingHelp.n2w4 fd
-            val to_set_bytes = Word8Array.array 1 (Word8.fromInt (if to_set then 1 else 0))
+            val inbuf = ByteArray.empty 5
+            val _ = MarshallingHelp.n2w4 fd inbuf 0
+            val _ = Word8Array.update inbuf 4 (Word8.fromInt (if to_set then 1 else 0))
             
-            val inbuf = ByteArray.concat_all [fd_bytes, to_set_bytes]
             val outbuf = ByteArray.empty 1
         in
             #(socket_set_tcp_nodelay) (ByteArray.to_string inbuf) outbuf;
@@ -164,10 +168,10 @@ struct
      *)
     fun set_so_keepalive (fd : int) (to_set : bool) =
         let
-            val fd_bytes = MarshallingHelp.n2w4 fd
-            val to_set_bytes = Word8Array.array 1 (Word8.fromInt (if to_set then 1 else 0))
+            val inbuf = ByteArray.empty 5
+            val _ = MarshallingHelp.n2w4 fd inbuf 0
+            val _ = Word8Array.update inbuf 4 (Word8.fromInt (if to_set then 1 else 0))
             
-            val inbuf = ByteArray.concat_all [fd_bytes, to_set_bytes]
             val outbuf = ByteArray.empty 1
         in
             #(socket_set_so_keepalive) (ByteArray.to_string inbuf) outbuf;
@@ -188,10 +192,10 @@ struct
      *)
     fun set_tcp_keepidle (fd : int) (value : int) =
         let
-            val fd_bytes = MarshallingHelp.n2w4 fd
-            val value_bytes = MarshallingHelp.n2w4 value
+            val inbuf = ByteArray.empty 8
+            val _ = MarshallingHelp.n2w4 fd inbuf 0
+            val _ = MarshallingHelp.n2w4 value inbuf 4
 
-            val inbuf = ByteArray.concat_all [fd_bytes, value_bytes]
             val outbuf = ByteArray.empty 1
         in
             #(socket_set_tcp_keepidle) (ByteArray.to_string inbuf) outbuf;
@@ -210,10 +214,10 @@ struct
      *)
     fun set_tcp_keepintvl (fd : int) (value : int) =
         let
-            val fd_bytes = MarshallingHelp.n2w4 fd
-            val value_bytes = MarshallingHelp.n2w4 value
+            val inbuf = ByteArray.empty 8
+            val _ = MarshallingHelp.n2w4 fd inbuf 0
+            val _ = MarshallingHelp.n2w4 value inbuf 4
 
-            val inbuf = ByteArray.concat_all [fd_bytes, value_bytes]
             val outbuf = ByteArray.empty 1
         in
             #(socket_set_tcp_keepintvl) (ByteArray.to_string inbuf) outbuf;
@@ -232,10 +236,10 @@ struct
      *)
     fun set_tcp_keepcnt (fd : int) (value : int) =
         let
-            val fd_bytes = MarshallingHelp.n2w4 fd
-            val value_bytes = MarshallingHelp.n2w4 value
+            val inbuf = ByteArray.empty 8
+            val _ = MarshallingHelp.n2w4 fd inbuf 0
+            val _ = MarshallingHelp.n2w4 value inbuf 4
 
-            val inbuf = ByteArray.concat_all [fd_bytes, value_bytes]
             val outbuf = ByteArray.empty 1
         in
             #(socket_set_tcp_keepcnt) (ByteArray.to_string inbuf) outbuf;
@@ -256,10 +260,10 @@ struct
      *)
     fun set_so_reuseaddr (fd : int) (to_set : bool) =
         let
-            val fd_bytes = MarshallingHelp.n2w4 fd
-            val to_set_bytes = Word8Array.array 1 (Word8.fromInt (if to_set then 1 else 0))
+            val inbuf = ByteArray.empty 5
+            val _ = MarshallingHelp.n2w4 fd inbuf 0
+            val _ = Word8Array.update inbuf 4 (Word8.fromInt (if to_set then 1 else 0))
             
-            val inbuf = ByteArray.concat_all [fd_bytes, to_set_bytes]
             val outbuf = ByteArray.empty 1
         in
             #(socket_set_so_reuseaddr) (ByteArray.to_string inbuf) outbuf;

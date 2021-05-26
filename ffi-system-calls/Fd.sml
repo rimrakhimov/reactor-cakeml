@@ -9,7 +9,9 @@ struct
      *)
     fun close fd =
         let
-            val inbuf = MarshallingHelp.n2w4 fd
+            val inbuf = ByteArray.empty 4
+            val _ = MarshallingHelp.n2w4 fd inbuf 0
+
             val outbuf = ByteArray.empty 1
         in
             #(fd_close) (ByteArray.to_string inbuf) outbuf;
@@ -32,10 +34,10 @@ struct
      *)
     fun read fd count =  
         let
-            val fd_bytes = MarshallingHelp.n2w4 fd
-            val count_bytes = MarshallingHelp.n2w4 count
+            val inbuf = ByteArray.empty 8
+            val _ = MarshallingHelp.n2w4 fd inbuf 0
+            val _ = MarshallingHelp.n2w4 count inbuf 4
 
-            val inbuf = ByteArray.concat_all [fd_bytes, count_bytes]
             val outbuf = ByteArray.empty (1 + 4 + count)
 
             val _ = #(fd_read) (ByteArray.to_string inbuf) outbuf
@@ -61,9 +63,10 @@ struct
      *)
     fun write fd (data : byte_array) =
         let
-            val fd_bytes = MarshallingHelp.n2w4 fd
+            val inbuf = ByteArray.empty (4 + Word8Array.length data)
+            val _ = MarshallingHelp.n2w4 fd inbuf 0
+            val _ = Word8Array.copy data 0 (Word8Array.length data) inbuf 4
 
-            val inbuf = ByteArray.concat fd_bytes data
             val outbuf = ByteArray.empty (1 + 4)
         in
             #(fd_write) (ByteArray.to_string inbuf) outbuf;
@@ -83,10 +86,10 @@ struct
      *)
     fun set_blocking (fd : int) (blocking : bool) =
         let
-            val fd_bytes = MarshallingHelp.n2w4 fd
-            val blocking_bytes = Word8Array.array 1 (Word8.fromInt (if blocking then 1 else 0))
+            val inbuf = ByteArray.empty 5
+            val _ = MarshallingHelp.n2w4 fd inbuf 0
+            val _ = Word8Array.update inbuf 4 (Word8.fromInt (if blocking then 1 else 0))
             
-            val inbuf = ByteArray.concat_all [fd_bytes, blocking_bytes]
             val outbuf = ByteArray.empty 1
         in
             #(fd_set_blocking) (ByteArray.to_string inbuf) outbuf;
