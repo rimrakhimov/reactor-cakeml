@@ -1,6 +1,6 @@
 structure ReactorAcceptorTests =
 struct
-    val logger = StdOutLogger.init LoggerLevel.Error
+    val logger = StdOutLogger.init LoggerLevel.Off
 
     fun error_callback state errno = 
         Assert.fail "Error occured"
