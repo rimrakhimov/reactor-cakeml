@@ -969,7 +969,21 @@ struct
                         ("Reactor.write: FD=" ^ Int.toString fd ^
                          ". Corresponding fd_info is not writable.");
                     raise ReactorBadArgumentError
-                ) else ()
+                ) else if (
+                    (* If the descriptor corresponds to a socket, we require
+                     * that the socket MUST be connected prior to the "write". *)
+                    (
+                        FdInfoType.is_write_data_stream fd_info
+                            orelse 
+                        FdInfoType.is_read_write_data_stream fd_info
+                    ) andalso not (FdInfoType.get_is_connected_status fd_info)
+                ) then (
+                    Logger.error
+                        logger
+                        ("Reactor.write: FD=" ^ Int.toString fd ^
+                         ". Corresponding fd_info refers to an unconnected socket.");
+                        raise ReactorBadArgumentError
+                ) else ();
             val _ = validate_fd_info ()
 
             val wr_buff = FdInfoType.get_wr_buff fd_info
