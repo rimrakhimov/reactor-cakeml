@@ -1551,6 +1551,156 @@ struct
                     handle_io_error reactor "delayed_write" fd_info (Some (~1)) "write() failed with Buffer Overflow"
         end
 
+    local
+        fun handle_connect reactor (a_where : string) fd_info events_mask =
+            if 
+                (* We are handling connection only if the socket has been
+                 * connecting before, and there was no error on the socket. *)
+                (FdInfoType.get_is_connecting_status fd_info)
+                    andalso
+                not (ReactorPrivate.is_error events_mask)
+                    andalso
+                (ReactorPrivate.is_writable events_mask)
+            then (
+                let
+                    val logger = ReactorType.get_logger reactor
+
+                    val fd = FdInfoType.get_fd fd_info
+                    val on_connect_opt = FdInfoType.get_connect_handler_opt fd_info
+
+                    val new_fd_info = FdInfoType.set_is_connected_status
+                        (FdInfoType.set_is_connecting_status fd_info False) 
+                        True
+                    val _ = ReactorType.add_fd_info reactor new_fd_info
+                in
+                    Logger.info
+                        logger
+                        ("Reactor." ^ a_where  ^ ": FD=" ^ Int.toString fd ^
+                         ": TCP Connect Successful");
+
+                    case on_connect_opt of
+                        None => reactor
+                      | Some (ConnectHandler connect_handler) => (
+                            let
+                                val (new_state, new_request_opt) = connect_handler (ReactorType.get_state reactor) fd
+                            in
+                                ReactorType.set_state reactor new_state;
+                                handle_function_request reactor new_request_opt
+                            end
+                        )
+                end
+            ) else reactor
+
+        fun handle_read reactor (a_where : string) (fd : int) events_mask = 
+            case ReactorType.get_fd_info_opt reactor fd of
+                None => (
+                    (* Descriptor has been deleted from the reactor by some handler
+                     * (most probably, by connect handler). *)
+                    reactor
+                )
+              | Some fd_info => (
+                    if 
+                        (* We are reading the data only from connected socket. *)
+                        FdInfoType.get_is_connected_status fd_info
+                            andalso
+                        ReactorPrivate.is_readable events_mask
+                    then (
+                        let
+                            val (ReadHandler read_handler) = FdInfoType.get_read_handler fd_info
+                            val buff = FdInfoType.get_rd_buff fd_info
+
+                            fun on_read r (fd : int) (buff : io_buffer) =
+                                let
+                                    val (new_state, n, new_request_opt) = read_handler (ReactorType.get_state r) fd buff
+                                in
+                                    ReactorType.set_state r new_state;
+                                    (handle_function_request r new_request_opt, n)
+                                end
+
+                            val result = IO.read_until_eagain reactor fd buff on_read ReactorType.has_fd_info
+                        in
+                            case result of
+                                Ok (new_reactor, n_total) => new_reactor
+                              | Error (new_reactor, n_total, exn) => (
+                                    (* User-defined error handler is invloked inside 
+                                     * `ReactorPrivate.handle_critical_io_error` function. *)
+                                    case exn of
+                                        FFIFailure => 
+                                            handle_io_error 
+                                                new_reactor a_where fd_info None "read() failed"
+                                      | IOBufferOverflow =>
+                                            handle_io_error
+                                                new_reactor a_where fd_info (Some (~1)) "read() failed with Buffer Overflow"
+                                      | IOEndOfFile =>
+                                            handle_io_error
+                                                new_reactor a_where fd_info (Some (~2)) "read() results in End-Of-File"
+                            )
+                        end
+                    ) else
+                        (* Descriptor has not been connected yet, or there is no 
+                            * EPOLLIN event occurred.
+                            *
+                            * If the descriptor is not connected, usually that means
+                            * that there was some error event occurred on the descriptor,
+                            * and we have not even tried to handle connect. *)
+                        reactor
+                )
+
+        fun handle_write reactor (fd : int) events_mask =
+            case ReactorType.get_fd_info_opt reactor fd of
+                None => (
+                    (* Descriptor has been deleted from the reactor by some handler. *)
+                    reactor
+                )
+              | Some fd_info => (
+                    if 
+                        (* We are writing only in connected sockets, and only 
+                         * if no errors occurred on the socket. *)
+                        FdInfoType.get_is_connected_status fd_info
+                            andalso
+                        ReactorPrivate.is_writable events_mask
+                            andalso
+                        not (ReactorPrivate.is_error events_mask)
+                    then (
+                        delayed_write reactor fd_info
+                    ) else
+                        (* Descriptor has not been connected yet, or there is no 
+                         * EPOLLOUT event occurred. 
+                         *
+                         * If the descriptor is not connected, usually that means
+                         * that there was some error event occurred on the descriptor,
+                         * and we have not even tried to handle connect. *)
+                        reactor
+                )
+    in
+        fun handle_read_data_stream reactor fd_info events_mask =
+            let
+                val a_where = "handle_read_data_stream"
+                val fd = FdInfoType.get_fd fd_info
+            in
+                handle_read (handle_connect reactor a_where fd_info events_mask) a_where fd events_mask
+            end
+
+        fun handle_write_data_stream reactor fd_info events_mask =
+            let
+                val a_where = "handle_write_data_stream"
+                val fd = FdInfoType.get_fd fd_info
+            in
+                handle_write (handle_connect reactor a_where fd_info events_mask) fd events_mask
+            end
+
+        fun handle_read_write_data_stream reactor fd_info events_mask =
+            let
+                val a_where = "handle_read_write_data_stream"
+                val fd = FdInfoType.get_fd fd_info
+            in
+                handle_write (
+                    handle_read (
+                        handle_connect reactor a_where fd_info events_mask
+                    ) a_where fd events_mask
+                ) fd events_mask
+            end
+    end
 
     (**
      *  Internal function that handles new pending connection events at
@@ -1818,8 +1968,13 @@ struct
                             let
                                 val new_reactor = 
                                     case fd_info of
-                                        (* (ReadDataStreamFdInfo _ _ _ _ _ _ _ _) => reactor *)
-                                        (AcceptorFdInfo _ _ _ _) =>
+                                        (ReadDataStreamFdInfo _ _ _ _ _ _ _ _) => 
+                                            ReactorInternal.handle_read_data_stream reactor fd_info events_mask
+                                      | (WriteDataStreamFdInfo _ _ _ _ _ _ _) => 
+                                            ReactorInternal.handle_write_data_stream reactor fd_info events_mask
+                                      | (ReadWriteDataStreamFdInfo _ _ _ _ _ _ _ _ _) => 
+                                            ReactorInternal.handle_read_write_data_stream reactor fd_info events_mask
+                                      | (AcceptorFdInfo _ _ _ _) =>
                                             ReactorInternal.handle_accept reactor fd_info events_mask
                                       | (TimerFdInfo _ _ _ _ _) => 
                                             ReactorInternal.handle_timer reactor fd_info events_mask
