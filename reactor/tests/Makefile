@@ -24,7 +24,7 @@ CC = gcc
 ROOT_PATH = ../..
 
 UTILS_PATH = $(ROOT_PATH)/utils
-UTILS_LIST = $(UTILS_PATH)/Exception.sml $(UTILS_PATH)/ByteArray.sml $(UTILS_PATH)/NetworkAddress.sml
+UTILS_LIST = $(UTILS_PATH)/Exception.sml $(UTILS_PATH)/Result.sml $(UTILS_PATH)/ByteArray.sml $(UTILS_PATH)/NetworkAddress.sml
 
 BUFFER_PATH = $(ROOT_PATH)/buffer
 BUFFER_LIST = $(BUFFER_PATH)/src/IOBuffer.sml
@@ -41,6 +41,7 @@ FFI_SYSTEM_CALLS_LIST = $(FFI_SYSTEM_CALLS_PATH)/MarshallingHelp.sml \
 							$(FFI_SYSTEM_CALLS_PATH)/epoll/EpollOpCode.sml \
 							$(FFI_SYSTEM_CALLS_PATH)/epoll/EpollEvent.sml \
 							$(FFI_SYSTEM_CALLS_PATH)/epoll/Epoll.sml \
+							$(FFI_SYSTEM_CALLS_PATH)/Socket.sml \
 							$(FFI_SYSTEM_CALLS_PATH)/Timer.sml \
 							$(FFI_SYSTEM_CALLS_PATH)/Timestamp.sml
 
@@ -53,11 +54,22 @@ TEST_UNIT_PATH = $(ROOT_PATH)/testing
 TEST_UNIT_LIST = $(TEST_UNIT_PATH)/src/Assert.sml $(TEST_UNIT_PATH)/src/Test.sml \
 					$(TEST_UNIT_PATH)/src/TextUITestRunner.sml
 
+<<<<<<< HEAD
 TEST_LIST = src/ReactorTimerTests.sml # src/reactor-file-tests/ReactorFileTests.sml
+=======
+TEST_LIST = src/reactor-acceptor-tests/ReactorAcceptorTests.sml \
+			src/reactor-file-tests/ReactorFileTests.sml src/*Tests.sml
+>>>>>>> functional-style
 
 .PHONY: all
 all: Tests.cake
 
+<<<<<<< HEAD
+=======
+reactor_acceptor_tests.o: src/reactor-acceptor-tests/ffi/reactor_acceptor_tests.c
+	$(CC) $(CFLAGS) -o $@ -c $^
+
+>>>>>>> functional-style
 reactor_file_tests_ffi.o: src/reactor-file-tests/ffi/reactor_file_tests_ffi.c
 	$(CC) $(CFLAGS) -o $@ -c $^
 
@@ -65,6 +77,9 @@ timestamp_ffi.o: $(FFI_SYSTEM_CALLS_PATH)/ffi/timestamp.c
 	$(CC) $(CFLAGS) -o $@ -c $^
 
 timer_ffi.o: $(FFI_SYSTEM_CALLS_PATH)/ffi/timer.c
+	$(CC) $(CFLAGS) -o $@ -c $^
+
+socket_ffi.o: $(FFI_SYSTEM_CALLS_PATH)/ffi/socket.c
 	$(CC) $(CFLAGS) -o $@ -c $^
 
 epoll_ffi.o: $(FFI_SYSTEM_CALLS_PATH)/ffi/epoll.c
@@ -80,8 +95,14 @@ basis_ffi.o: $(BASIS)
 	$(CC) $(CFLAGS) -c $(BASIS)
 
 Tests.cake: Tests.cake.S basis_ffi.o \
+<<<<<<< HEAD
 		errno_ffi.o fd_ffi.o epoll_ffi.o timer_ffi.o \
 		timestamp_ffi.o reactor_file_tests_ffi.o
+=======
+		errno_ffi.o fd_ffi.o epoll_ffi.o socket_ffi.o \
+		timer_ffi.o timestamp_ffi.o \
+		reactor_file_tests_ffi.o reactor_acceptor_tests.o
+>>>>>>> functional-style
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $^
 
 Tests.cake.S: Tests.cake.sml
@@ -93,9 +114,20 @@ Tests.cake.sml: $(UTILS_LIST) $(BUFFER_LIST) $(LOGGER_LIST) $(FFI_SYSTEM_CALLS_L
 
 clean: 
 	$(RM) Tests.cake Tests.cake.S Tests.cake.sml basis_ffi.o \
+<<<<<<< HEAD
 		errno_ffi.o fd_ffi.o epoll_ffi.o timer_ffi.o \
 		timestamp_ffi.o reactor_file_tests_ffi.o
 
 .INTERMEDIATE: Tests.cake.S Tests.cake.sml basis_ffi.o \
 		errno_ffi.o fd_ffi.o epoll_ffi.o timer_ffi.o \
 		timestamp_ffi.o reactor_file_tests_ffi.o
+=======
+		errno_ffi.o fd_ffi.o epoll_ffi.o socket_ffi.o \
+		timer_ffi.o timestamp_ffi.o \
+		reactor_file_tests_ffi.o reactor_acceptor_tests.o
+
+.INTERMEDIATE: Tests.cake.S Tests.cake.sml basis_ffi.o \
+		errno_ffi.o fd_ffi.o epoll_ffi.o socket_ffi.o \
+		timer_ffi.o timestamp_ffi.o \
+		reactor_file_tests_ffi.o reactor_acceptor_tests.o
+>>>>>>> functional-style

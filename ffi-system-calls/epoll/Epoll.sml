@@ -33,13 +33,14 @@ struct
     fun ctl (op_code : epoll_op_code) (epoll_fd : int) 
             (fd : int) (events_mask : epoll_events_mask) =
         let
-            val op_code_bytes = EpollOpCode.to_bytes op_code
-            val epoll_fd_bytes = MarshallingHelp.n2w4 epoll_fd
-            val fd_bytes = MarshallingHelp.n2w4 fd
-            val events_mask_bytes = EpollEventsMask.to_bytes events_mask
+            val inbuf = ByteArray.empty (EpollOpCode.size + 4 + 4 + EpollEventsMask.size)
+            val _ = Word8Array.copy (EpollOpCode.to_bytes op_code) 0 EpollOpCode.size inbuf 0
+            val _ = MarshallingHelp.n2w4 epoll_fd inbuf EpollOpCode.size
+            val _ = MarshallingHelp.n2w4 fd inbuf (EpollOpCode.size + 4)
+            val _ = Word8Array.copy 
+                (EpollEventsMask.to_bytes events_mask) 0 EpollEventsMask.size 
+                inbuf (EpollOpCode.size + 4 + 4)
 
-            val inbuf = ByteArray.concat_all 
-                [op_code_bytes, epoll_fd_bytes, fd_bytes, events_mask_bytes]
             val outbuf = ByteArray.empty 1
         in
             #(epoll_ctl) (ByteArray.to_string inbuf) outbuf;
@@ -66,12 +67,11 @@ struct
      *)
     fun wait (epoll_fd : int) (max_events : int) (timeout : int) = 
         let
-            val epoll_fd_bytes = MarshallingHelp.n2w4 epoll_fd
-            val max_events_bytes = MarshallingHelp.n2w4 max_events
-            val timeout_bytes = MarshallingHelp.n2w8 timeout
+            val inbuf = ByteArray.empty 16
+            val _ =  MarshallingHelp.n2w4 epoll_fd inbuf 0
+            val _ = MarshallingHelp.n2w4 max_events inbuf 4
+            val _ = MarshallingHelp.n2w8 timeout inbuf 8
 
-            val inbuf = ByteArray.concat_all 
-                [epoll_fd_bytes, max_events_bytes, timeout_bytes]
             val outbuf = ByteArray.empty (1 + 4 + max_events * EpollEvent.size)
 
             val _ = #(epoll_wait) (ByteArray.to_string inbuf) outbuf

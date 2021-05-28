@@ -17,8 +17,8 @@ datatype 'a fd_info =
      *      @param fd `int`: file descriptor.
      *      @param on_read `'a read_handler`: a concrete event handler 
      *          to be called back when new data is read.
-     *      @param on_connect `'a connect_handler`: a concrete event handler
-     *          to be called back when a connection is established.
+     *      @param on_connect_opt `'a connect_handler option`: a concrete event 
+     *          handler to be called back when a connection is established.
      *      @param on_err `'a err_handler`: a concrete event handler
      *          to be called back when any error occurs on the descriptor.
      *      @param rd_buff `io_buffer`: a buffer where arrived data is stored 
@@ -29,14 +29,14 @@ datatype 'a fd_info =
      *          has been established on the underlying socket.
      *)
     ReadDataStreamFdInfo string int 
-        ('a read_handler) ('a connect_handler) ('a err_handler) io_buffer bool bool
+        ('a read_handler) ('a connect_handler option) ('a err_handler) io_buffer bool bool
 
     (*  WriteDataStreamInfo - constructor represents data streams (sockets)
      *  which can be written, but cannot be read:
      *      @param name `string`: client defined name of the descriptor.
      *      @param fd `int`: file descriptor.
-     *      @param on_connect `'a connect_handler`: a concrete event handler
-     *          to be called back when a connection is established.
+     *      @param on_connect_opt `'a connect_handler option`: a concrete event 
+     *          handler to be called back when a connection is established.
      *      @param on_err `'a err_handler`: a concrete event handler
      *          to be called back when any error occurs on the descriptor.
      *      @param wr_buff `io_buffer`: a buffer where not sent data is stored.
@@ -46,7 +46,7 @@ datatype 'a fd_info =
      *          has been established on the underlying socket.
      *)
   | WriteDataStreamFdInfo string int
-        ('a connect_handler) ('a err_handler) io_buffer bool bool
+        ('a connect_handler option) ('a err_handler) io_buffer bool bool
 
     (*  ReadWriteDataStreamInfo - constructor represents data streams (sockets)
      *  which can be both read and written:
@@ -54,8 +54,8 @@ datatype 'a fd_info =
      *      @param fd `int`: file descriptor.
      *      @param on_read `'a read_handler`: a concrete event handler 
      *          to be called back when new data is read.
-     *      @param on_connect `'a connect_handler`: a concrete event handler
-     *          to be called back when a connection is established.
+     *      @param on_connect_opt `'a connect_handler option`: a concrete event 
+     *          handler to be called back when a connection is established.
      *      @param on_err `'a err_handler`: a concrete event handler
      *          to be called back when any error occurs on the descriptor.
      *      @param rd_buff `io_buffer`: a buffer where arrived data is stored 
@@ -67,7 +67,7 @@ datatype 'a fd_info =
      *          has been established on the underlying socket.
      *)
   | ReadWriteDataStreamFdInfo string int 
-        ('a read_handler) ('a connect_handler) ('a err_handler) 
+        ('a read_handler) ('a connect_handler option) ('a err_handler) 
         io_buffer io_buffer bool bool
 
     (*  TimerFdInfo - constructor represents file descriptors that 
@@ -179,11 +179,11 @@ struct
           | (ReadFileFdInfo _ _ on_read _ _) => on_read
           | _ => raise InvalidType
 
-    fun get_connect_handler fd_info =
+    fun get_connect_handler_opt fd_info =
         case fd_info of
-            (ReadDataStreamFdInfo _ _ _ on_connect _ _ _ _) => on_connect
-          | (WriteDataStreamFdInfo _ _ on_connect _ _ _ _) => on_connect
-          | (ReadWriteDataStreamFdInfo _ _ _ on_connect _ _ _ _ _) => on_connect
+            (ReadDataStreamFdInfo _ _ _ on_connect_opt _ _ _ _) => on_connect_opt
+          | (WriteDataStreamFdInfo _ _ on_connect_opt _ _ _ _) => on_connect_opt
+          | (ReadWriteDataStreamFdInfo _ _ _ on_connect_opt _ _ _ _ _) => on_connect_opt
           | _ => raise InvalidType
 
     fun get_timer_handler fd_info =

@@ -7,25 +7,47 @@
 #include "include/marshalling.h"
 
 uint32_t ffi_events_to_events(int c_events) {
-    return (c_events & FFI_EPOLL_EPOLLIN) * EPOLLIN |
-           (c_events & FFI_EPOLL_EPOLLOUT) * EPOLLOUT |
-           (c_events & FFI_EPOLL_EPOLLRDHUP) * EPOLLRDHUP |
-           (c_events & FFI_EPOLL_EPOLLPRI) * EPOLLPRI |
-           (c_events & FFI_EPOLL_EPOLLERR) * EPOLLERR |
-           (c_events & FFI_EPOLL_EPOLLHUP) * EPOLLHUP |
-           (c_events & FFI_EPOLL_EPOLLET) * EPOLLET |
-           (c_events & FFI_EPOLL_EPOLLONESHOT) * EPOLLONESHOT;
+    uint32_t events = 0;
+    if ((c_events & FFI_EPOLL_EPOLLIN) > 0) 
+        events |= EPOLLIN;
+    if ((c_events & FFI_EPOLL_EPOLLOUT) > 0)
+        events |= EPOLLOUT;
+    if ((c_events & FFI_EPOLL_EPOLLRDHUP) > 0)
+        events |= EPOLLRDHUP;
+    if ((c_events & FFI_EPOLL_EPOLLPRI) > 0)
+        events |= EPOLLPRI;
+    if ((c_events & FFI_EPOLL_EPOLLERR) > 0)
+        events |= EPOLLERR;
+    if ((c_events & FFI_EPOLL_EPOLLHUP) > 0)
+        events |= EPOLLHUP;
+    if ((c_events & FFI_EPOLL_EPOLLET) > 0)
+        events |= EPOLLET;
+    if ((c_events & FFI_EPOLL_EPOLLONESHOT) > 0)
+        events |= EPOLLONESHOT;
+    
+    return events;
 }
 
 uint32_t events_to_ffi_events(int events) {
-    return (events & EPOLLIN) * FFI_EPOLL_EPOLLIN |
-           (events & EPOLLOUT) * FFI_EPOLL_EPOLLOUT |
-           (events & EPOLLRDHUP) * FFI_EPOLL_EPOLLRDHUP |
-           (events & EPOLLPRI) * FFI_EPOLL_EPOLLPRI |
-           (events & EPOLLERR) * FFI_EPOLL_EPOLLERR |
-           (events & EPOLLHUP) * FFI_EPOLL_EPOLLHUP |
-           (events & EPOLLET) * FFI_EPOLL_EPOLLET |
-           (events & EPOLLONESHOT) * FFI_EPOLL_EPOLLONESHOT;
+    uint32_t c_events = 0;
+    if ((events & EPOLLIN) > 0)
+        c_events |= FFI_EPOLL_EPOLLIN;
+    if ((events & EPOLLOUT) > 0)
+        c_events |= FFI_EPOLL_EPOLLOUT;
+    if ((events & EPOLLRDHUP) > 0)
+        c_events |= FFI_EPOLL_EPOLLRDHUP;
+    if ((events & EPOLLPRI) > 0)
+        c_events |= FFI_EPOLL_EPOLLPRI;
+    if ((events & EPOLLERR) > 0)
+        c_events |= FFI_EPOLL_EPOLLERR;
+    if ((events & EPOLLHUP) > 0)
+        c_events |= FFI_EPOLL_EPOLLHUP;
+    if ((events & EPOLLET) > 0)
+        c_events |= FFI_EPOLL_EPOLLET;
+    if ((events & EPOLLONESHOT) > 0)
+        c_events |= FFI_EPOLL_EPOLLONESHOT;
+
+    return c_events;
 }
 
 int ffi_op_code_to_op_code(int c_op_code) {
