@@ -54,11 +54,15 @@ TEST_UNIT_PATH = $(ROOT_PATH)/testing
 TEST_UNIT_LIST = $(TEST_UNIT_PATH)/src/Assert.sml $(TEST_UNIT_PATH)/src/Test.sml \
 					$(TEST_UNIT_PATH)/src/TextUITestRunner.sml
 
-TEST_LIST = src/reactor-acceptor-tests/ReactorAcceptorTests.sml \
+TEST_LIST = src/reactor-data-stream-tests/ReactorDataStreamTests.sml \
+			src/reactor-acceptor-tests/ReactorAcceptorTests.sml \
 			src/reactor-file-tests/ReactorFileTests.sml src/*Tests.sml
 
 .PHONY: all
 all: Tests.cake
+
+reactor_data_stream_tests.o: src/reactor-data-stream-tests/ffi/reactor_data_stream_tests.c
+	$(CC) $(CFLAGS) -o $@ -c $^
 
 reactor_acceptor_tests.o: src/reactor-acceptor-tests/ffi/reactor_acceptor_tests.c
 	$(CC) $(CFLAGS) -o $@ -c $^
@@ -90,7 +94,8 @@ basis_ffi.o: $(BASIS)
 Tests.cake: Tests.cake.S basis_ffi.o \
 		errno_ffi.o fd_ffi.o epoll_ffi.o socket_ffi.o \
 		timer_ffi.o timestamp_ffi.o \
-		reactor_file_tests_ffi.o reactor_acceptor_tests.o
+		reactor_file_tests_ffi.o reactor_acceptor_tests.o \
+		reactor_data_stream_tests.o
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $^
 
 Tests.cake.S: Tests.cake.sml
@@ -104,9 +109,11 @@ clean:
 	$(RM) Tests.cake Tests.cake.S Tests.cake.sml basis_ffi.o \
 		errno_ffi.o fd_ffi.o epoll_ffi.o socket_ffi.o \
 		timer_ffi.o timestamp_ffi.o \
-		reactor_file_tests_ffi.o reactor_acceptor_tests.o
+		reactor_file_tests_ffi.o reactor_acceptor_tests.o \
+		reactor_data_stream_tests.o
 
 .INTERMEDIATE: Tests.cake.S Tests.cake.sml basis_ffi.o \
 		errno_ffi.o fd_ffi.o epoll_ffi.o socket_ffi.o \
 		timer_ffi.o timestamp_ffi.o \
-		reactor_file_tests_ffi.o reactor_acceptor_tests.o
+		reactor_file_tests_ffi.o reactor_acceptor_tests.o \
+		reactor_data_stream_tests.o
