@@ -41,11 +41,7 @@ FFI_SYSTEM_CALLS_LIST = $(FFI_SYSTEM_CALLS_PATH)/MarshallingHelp.sml \
 							$(FFI_SYSTEM_CALLS_PATH)/epoll/EpollEvent.sml \
 							$(FFI_SYSTEM_CALLS_PATH)/epoll/Epoll.sml \
 							$(FFI_SYSTEM_CALLS_PATH)/Socket.sml \
-							$(FFI_SYSTEM_CALLS_PATH)/Timer.sml \
-							$(FFI_SYSTEM_CALLS_PATH)/Timestamp.sml
-
-TIME_PATH = $(ROOT_PATH)/time
-TIME_LIST = $(TIME_PATH)/src/Time.sml
+							$(FFI_SYSTEM_CALLS_PATH)/Timer.sml
 
 SRC_LIST = src/IO.sml src/EventHandlers.sml src/FDInfo.sml src/Reactor.sml
 
@@ -73,20 +69,18 @@ errno_ffi.o: $(FFI_SYSTEM_CALLS_PATH)/ffi/errno.c
 basis_ffi.o: $(BASIS)
 	$(CC) $(CFLAGS) -c $(BASIS)
 
-Reactor.cake: Reactor.cake.S basis_ffi.o errno_ffi.o fd_ffi.o epoll_ffi.o socket_ffi.o timer_ffi.o timestamp_ffi.o
+Reactor.cake: Reactor.cake.S basis_ffi.o errno_ffi.o fd_ffi.o epoll_ffi.o socket_ffi.o timer_ffi.o
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $^
 
 Reactor.cake.S: Reactor.cake.sml
 	$(CAKEC) < $^ > Reactor.cake.S
 
-Reactor.cake.sml: $(UTILS_LIST) $(BUFFER_LIST) $(LOGGER_LIST) $(FFI_SYSTEM_CALLS_LIST) $(TIME_LIST) $(SRC_LIST)
+Reactor.cake.sml: $(UTILS_LIST) $(BUFFER_LIST) $(LOGGER_LIST) $(FFI_SYSTEM_CALLS_LIST) $(SRC_LIST)
 	cat $^ > $@
 
 clean: 
 	$(RM) Reactor.cake Reactor.cake.S Reactor.cake.sml basis_ffi.o \
-		errno_ffi.o fd_ffi.o epoll_ffi.o socket_ffi.o timer_ffi.o \
-		timestamp_ffi.o
+		errno_ffi.o fd_ffi.o epoll_ffi.o socket_ffi.o timer_ffi.o
 
 .INTERMEDIATE: Reactor.cake.S Reactor.cake.sml basis_ffi.o \
-		errno_ffi.o fd_ffi.o epoll_ffi.o socket_ffi.o timer_ffi.o \
-		timestamp_ffi.o
+		errno_ffi.o fd_ffi.o epoll_ffi.o socket_ffi.o timer_ffi.o
